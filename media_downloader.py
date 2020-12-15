@@ -154,22 +154,32 @@ async def download_media(
     if message.media:
         for _type in media_types:
             _media = getattr(message, _type, None)
-            if _media:
-                file_ref, file_name, file_format = await _get_media_meta(
-                    _media, _type
-                )
-                if _can_download(_type, file_formats, file_format):
-                    if _is_exist(file_name):
-                        file_name = get_next_name(file_name)
-                        download_path = await client.download_media(
-                            message, file_ref=file_ref, file_name=file_name
-                        )
-                        download_path = manage_duplicate_file(download_path)
-                    else:
-                        download_path = await client.download_media(
-                            message, file_ref=file_ref, file_name=file_name
-                        )
-                    logger.info("Media downloaded - %s", download_path)
+            if _media is None:
+                return
+            for attempt in range(3):
+                try:
+                    file_ref, file_name, file_format = await _get_media_meta(
+                        _media, _type
+                    )
+                    if _can_download(_type, file_formats, file_format):
+                        if _is_exist(file_name):
+                            file_name = get_next_name(file_name)
+                            download_path = await client.download_media(
+                                message, file_ref=file_ref, file_name=file_name
+                            )
+                            download_path = manage_duplicate_file(download_path)
+                        else:
+                            download_path = await client.download_media(
+                                message, file_ref=file_ref, file_name=file_name
+                            )
+                        logger.info("Media downloaded - %s", download_path)
+                except pyrogram.errors.exceptions.bad_request_400.BadRequest as e:
+                    logger.warn("Media file reference expired: %s, refreshing...", file_name)
+                else:
+                    break
+            else:
+                logger.warn("Media file reference expired for 3 times: %s, skiped.", file_name)
+
     return message.message_id
 
 
