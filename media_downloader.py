@@ -334,7 +334,7 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
         await client.stop()
         config["last_read_message_id"] = last_read_message_id
         return config
-    except asyncio.exceptions.CancelledError:
+    except asyncio.CancelledError:
         await client.stop()
         update_config(config)
         raise
@@ -365,7 +365,7 @@ def main():
                 len(set(FAILED_IDS)),
             )
         update_config(updated_config)
-    except asyncio.exceptions.CancelledError:
+    except asyncio.CancelledError:
         logger.info("Received exit signal...; Stopping the process.")
         event_loop.stop()
     finally:
