@@ -4,8 +4,13 @@ import copy
 import logging
 import platform
 import unittest
+import threading
+from signal import SIGINT, SIGTERM, SIGKILL
+from time import sleep
 
 import asyncio
+from asyncio import Future
+
 import mock
 import pyrogram
 import pytest
@@ -97,6 +102,12 @@ class MockEventLoop:
 
     def run_until_complete(self, *args, **kwargs):
         return {"api_id": 1, "api_hash": "asdf", "ids_to_retry": [1, 2, 3]}
+    
+    def add_signal_handler(self, *args, **kwargs):
+        pass
+
+    def close(self):
+        pass
 
 
 class MockAsync:
@@ -105,6 +116,9 @@ class MockAsync:
 
     def get_event_loop(self):
         return MockEventLoop()
+    
+    def ensure_future(self, coro):
+        return Future
 
 
 async def async_get_media_meta(message_media, _type):
@@ -593,3 +607,26 @@ class MediaDownloaderTestCase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.loop.close()
+
+
+class MediaDownloaderIntegrationTestCase(unittest.TestCase):
+
+    @pytest.fixture(autouse=True)
+    def mock_event_loop(self, event_loop):
+        self.event_loop = event_loop
+        return self.event_loop
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.begin_import")
+    def test_main_signal_handler(self, mock_begin_import, mock_update_config):
+        def _send_signal():
+            sleep(1)
+            os.kill(os.getpid(), SIGINT)
+
+        thread = threading.Thread(target=_send_signal, daemon=True)
+        thread.start()
+        main()
+        self.assertTrue(all(signal in [SIGINT, SIGTERM] for signal in self.event_loop._signal_handlers))
+        self.assertTrue(SIGKILL not in self.event_loop._signal_handlers)
+        self.assertTrue(not self.event_loop.is_running())
+        self.assertTrue(self.event_loop.is_closed())
