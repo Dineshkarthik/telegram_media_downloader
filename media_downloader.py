@@ -1,6 +1,7 @@
 """Downloads media from telegram."""
 import os
 import logging
+from signal import SIGINT, SIGTERM
 from typing import List, Tuple, Optional
 from datetime import datetime as dt
 
@@ -295,62 +296,80 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
         api_hash=config["api_hash"],
     )
     pyrogram.session.Session.notice_displayed = True
-    await client.start()
-    last_read_message_id: int = config["last_read_message_id"]
-    messages_iter = client.iter_history(
-        config["chat_id"],
-        offset_id=last_read_message_id,
-        reverse=True,
-    )
-    pagination_count: int = 0
-    messages_list: list = []
+    try:
+        await client.start()
+        last_read_message_id: int = config["last_read_message_id"]
+        messages_iter = client.iter_history(
+            config["chat_id"],
+            offset_id=last_read_message_id,
+            reverse=True,
+        )
+        pagination_count: int = 0
+        messages_list: list = []
 
-    async for message in messages_iter:
-        if pagination_count != pagination_limit:
-            pagination_count += 1
-            messages_list.append(message)
-        else:
+        async for message in messages_iter:
+            if pagination_count != pagination_limit:
+                pagination_count += 1
+                messages_list.append(message)
+            else:
+                last_read_message_id = await process_messages(
+                    client,
+                    messages_list,
+                    config["media_types"],
+                    config["file_formats"],
+                )
+                pagination_count = 0
+                messages_list = []
+                messages_list.append(message)
+                config["last_read_message_id"] = last_read_message_id
+                update_config(config)
+        if messages_list:
             last_read_message_id = await process_messages(
                 client,
                 messages_list,
                 config["media_types"],
                 config["file_formats"],
             )
-            pagination_count = 0
-            messages_list = []
-            messages_list.append(message)
-            config["last_read_message_id"] = last_read_message_id
-            update_config(config)
-    if messages_list:
-        last_read_message_id = await process_messages(
-            client,
-            messages_list,
-            config["media_types"],
-            config["file_formats"],
-        )
 
-    await client.stop()
-    config["last_read_message_id"] = last_read_message_id
-    return config
-
+        await client.stop()
+        config["last_read_message_id"] = last_read_message_id
+        return config
+    except asyncio.exceptions.CancelledError:
+        await client.stop()
+        update_config(config)
+        raise
 
 def main():
     """Main function of the downloader."""
     f = open(os.path.join(THIS_DIR, "config.yaml"))
     config = yaml.safe_load(f)
     f.close()
-    updated_config = asyncio.get_event_loop().run_until_complete(
+
+    event_loop = asyncio.get_event_loop()
+    begin_import_task = asyncio.ensure_future(
         begin_import(config, pagination_limit=100)
     )
-    if FAILED_IDS:
-        logger.info(
-            "Downloading of %d files failed. "
-            "Failed message ids are added to config file.\n"
-            "Functionality to re-download failed downloads will be added "
-            "in the next version of `Telegram-media-downloader`",
-            len(set(FAILED_IDS)),
-        )
-    update_config(updated_config)
+
+    for signal in [SIGINT, SIGTERM]:
+        event_loop.add_signal_handler(signal, begin_import_task.cancel)
+
+    try:
+        updated_config = event_loop.run_until_complete(begin_import_task)
+
+        if FAILED_IDS:
+            logger.info(
+                "Downloading of %d files failed. "
+                "Failed message ids are added to config file.\n"
+                "Functionality to re-download failed downloads will be added "
+                "in the next version of `Telegram-media-downloader`",
+                len(set(FAILED_IDS)),
+            )
+        update_config(updated_config)
+    except asyncio.exceptions.CancelledError:
+        logger.info("Received exit signal...; Stopping the process.")
+        event_loop.stop()
+    finally:
+        event_loop.close()
 
 
 if __name__ == "__main__":
