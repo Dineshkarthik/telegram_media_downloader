@@ -335,7 +335,6 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
         config["last_read_message_id"] = last_read_message_id
         return config
     except asyncio.CancelledError:
-        await client.stop()
         update_config(config)
         raise
 
