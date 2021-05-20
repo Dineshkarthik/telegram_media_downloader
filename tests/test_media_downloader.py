@@ -611,21 +611,31 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
 class MediaDownloaderIntegrationTestCase(unittest.TestCase):
 
+    # use pytest-asyncio's event_loop fixture.
     @pytest.fixture(autouse=True)
     def mock_event_loop(self, event_loop):
         self.event_loop = event_loop
         return self.event_loop
 
-    @mock.patch("media_downloader.update_config")
-    @mock.patch("media_downloader.begin_import")
-    def test_main_signal_handler(self, mock_begin_import, mock_update_config):
+    @mock.patch("media_downloader.yaml.safe_load")
+    def test_main_signal_handler(self, mock_yaml):
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [1, 2],
+        }
+        mock_yaml.return_value = conf
+
         def _send_signal():
-            sleep(1)
+            # wait a bit to allow the loop to start...
+            sleep(0.5)
             os.kill(os.getpid(), SIGINT)
 
         thread = threading.Thread(target=_send_signal, daemon=True)
         thread.start()
+
         main()
+
         self.assertTrue(all(signal in [SIGINT, SIGTERM] for signal in self.event_loop._signal_handlers))
         self.assertTrue(SIGKILL not in self.event_loop._signal_handlers)
         self.assertTrue(not self.event_loop.is_running())
