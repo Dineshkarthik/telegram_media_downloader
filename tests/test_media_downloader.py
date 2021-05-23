@@ -187,6 +187,7 @@ class MockClient:
             ),
         ]
         for item in items:
+            sleep(0.1) # without sleep, it is too fast to catch signals for testing.
             yield item
 
     async def get_messages(self, *args, **kwargs):
@@ -617,18 +618,14 @@ class MediaDownloaderIntegrationTestCase(unittest.TestCase):
         self.event_loop = event_loop
         return self.event_loop
 
+    @mock.patch("media_downloader.pyrogram.Client", new=MockClient)
     @mock.patch("media_downloader.yaml.safe_load")
     def test_main_signal_handler(self, mock_yaml):
-        conf = {
-            "api_id": 1,
-            "api_hash": "asdf",
-            "ids_to_retry": [1, 2],
-        }
-        mock_yaml.return_value = conf
+        mock_yaml.return_value = MOCK_CONF
 
         def _send_signal():
             # wait a bit to allow the loop to start...
-            sleep(0.5)
+            sleep(0.1)
             os.kill(os.getpid(), SIGINT)
 
         thread = threading.Thread(target=_send_signal, daemon=True)
