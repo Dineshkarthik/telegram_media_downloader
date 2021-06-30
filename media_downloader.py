@@ -1,6 +1,8 @@
 """Downloads media from telegram."""
 import os
 import logging
+import re
+import sys
 from typing import List, Tuple, Optional
 from datetime import datetime as dt
 
@@ -12,11 +14,13 @@ from utils.file_management import get_next_name, manage_duplicate_file
 from utils.log import LogFilter
 from utils.meta import print_meta
 
-
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("pyrogram.session.session").addFilter(LogFilter())
 logging.getLogger("pyrogram.client").addFilter(LogFilter())
 logger = logging.getLogger("media_downloader")
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(message)s"))
+logger.addHandler(handler)
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 FAILED_IDS: list = []
@@ -38,7 +42,7 @@ def update_config(config: dict):
 
 
 def _can_download(
-    _type: str, file_formats: dict, file_format: Optional[str]
+        _type: str, file_formats: dict, file_format: Optional[str]
 ) -> bool:
     """
     Check if the given file format can be downloaded.
@@ -84,7 +88,7 @@ def _is_exist(file_path: str) -> bool:
 
 
 async def _get_media_meta(
-    media_obj: pyrogram.types.messages_and_media, _type: str
+        media_obj: pyrogram.types.messages_and_media, _type: str
 ) -> Tuple[str, Optional[str]]:
     """
     Extract file name and file id.
@@ -123,10 +127,10 @@ async def _get_media_meta(
 
 
 async def download_media(
-    client: pyrogram.client.Client,
-    message: pyrogram.types.Message,
-    media_types: List[str],
-    file_formats: dict,
+        client: pyrogram.client.Client,
+        message: pyrogram.types.Message,
+        media_types: List[str],
+        file_formats: dict,
 ):
     """
     Download media from Telegram.
@@ -161,6 +165,7 @@ async def download_media(
     """
     for retry in range(3):
         try:
+            logger.debug(message)
             if message.media is None:
                 return message.message_id
             for _type in media_types:
@@ -168,6 +173,21 @@ async def download_media(
                 if _media is None:
                     continue
                 file_name, file_format = await _get_media_meta(_media, _type)
+
+                f_name = message.sender_chat.username + "_" + str(message.message_id) + "-"  # 文件名
+                if message.forward_from_chat:  # 是转发的
+                    f_name += message.forward_from_chat.username + "_" + str(message.forward_from_message_id) + "-"
+                if message.video:
+                    root, ext = os.path.splitext(message.video.file_name)
+                    f_name += root
+                if message.caption and message.caption != "":
+                    caption = re.sub(r"\s", "_", message.caption)
+                    # 只保留中文，字母，数字 [\u4e00-\u9fa5a-zA-Z0-9]+
+                    f_name += "-" + re.sub(u"([^\u4e00-\u9fa5\u0030-\u0039\u0041-\u005a\u0061-\u007a])", "", caption)
+                head, tail = os.path.split(file_name)  # 拆分路径
+                file_name = os.path.join(head, f_name)  # 拼接路径
+                logger.debug(file_name)
+
                 if _can_download(_type, file_formats, file_format):
                     if _is_exist(file_name):
                         file_name = get_next_name(file_name)
@@ -225,10 +245,10 @@ async def download_media(
 
 
 async def process_messages(
-    client: pyrogram.client.Client,
-    messages: List[pyrogram.types.Message],
-    media_types: List[str],
-    file_formats: dict,
+        client: pyrogram.client.Client,
+        messages: List[pyrogram.types.Message],
+        media_types: List[str],
+        file_formats: dict,
 ) -> int:
     """
     Download media from Telegram.
@@ -258,6 +278,7 @@ async def process_messages(
     int
         Max value of list of message ids.
     """
+    logger.debug(messages)
     message_ids = await asyncio.gather(
         *[
             download_media(client, message, media_types, file_formats)
