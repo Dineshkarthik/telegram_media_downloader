@@ -1,4 +1,4 @@
 Pyrogram==1.4.8
 PyYAML==6.0
-rich==11.2.0
+rich==12.0.1
 TgCrypto==1.2.3
