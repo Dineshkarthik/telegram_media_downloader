@@ -43,9 +43,9 @@ def update_config(config: dict):
     for chat_index in range(len(config["chats"])):
         chat_id = config["chats"][chat_index]["id"]
         if chat_id not in DOWNLOADED_IDS:
-            DOWNLOADED_IDS[chat_id] = list()
+            DOWNLOADED_IDS[chat_id] = []
         if chat_id not in FAILED_IDS:
-            FAILED_IDS[chat_id] = list()
+            FAILED_IDS[chat_id] = []
 
         config["chats"][chat_index]["ids_to_retry"] = (
             list(
@@ -119,6 +119,10 @@ async def _get_media_meta(
         Media object to be extracted.
     _type: str
         Type of media object.
+    tg_chat_name: str
+        Original chat name from telegram
+    chat_name: str
+        Optional chat name replacement from config.yaml
 
     Returns
     -------
@@ -190,6 +194,11 @@ async def download_media(
         Dictionary containing the list of file_formats
         to be downloaded for `audio`, `document` & `video`
         media types.
+    chat_name: str
+        Chat name from config.yaml used for naming
+        of the directory containing downloaded media if given
+    chat_id: int
+        Chat id used to append message to FAILED_IDS or DOWNLOADED_IDS
 
     Returns
     -------
@@ -198,14 +207,19 @@ async def download_media(
     """
     for retry in range(3):
         try:
-            if message.media is None:
+            if (
+                (message.media is None) or
+                (message.chat is None and chat_name == "")
+            ):
                 return message.message_id
+            tg_chat_name = "" if message.chat is None else message.chat.title
+
             for _type in media_types:
                 _media = getattr(message, _type, None)
                 if _media is None:
                     continue
                 file_name, file_format = await _get_media_meta(
-                    _media, _type, str(message.chat.title), chat_name
+                    _media, _type, str(tg_chat_name), chat_name
                 )
                 if _can_download(_type, file_formats, file_format):
                     if _is_exist(file_name):
@@ -295,6 +309,11 @@ async def process_messages(
         Dictionary containing the list of file_formats
         to be downloaded for `audio`, `document` & `video`
         media types.
+    chat_name: str
+        Chat name from config.yaml used for naming
+        of the directory containing downloaded media if given
+    chat_id: int
+        Chat id used to append message to FAILED_IDS or DOWNLOADED_IDS
 
     Returns
     -------
@@ -345,8 +364,8 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
     for chat_index in range(len(config["chats"])):
         chat_id = config["chats"][chat_index]["id"]
 
-        FAILED_IDS[chat_id] = list()
-        DOWNLOADED_IDS[chat_id] = list()
+        FAILED_IDS[chat_id] = []
+        DOWNLOADED_IDS[chat_id] = []
 
         chat_name = (
             config["chat_names"][str(chat_id)]
