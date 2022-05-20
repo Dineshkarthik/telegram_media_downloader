@@ -27,12 +27,20 @@ if platform.system() == "Windows":
 MOCK_CONF = {
     "api_id": 123,
     "api_hash": "hasw5Tgawsuj67",
-    "last_read_message_id": 0,
-    "chat_id": 8654123,
-    "ids_to_retry": [1],
+    "chats": [
+        {
+            "id": 8654123,
+            "last_read_message_id": 0,
+            "ids_to_retry": [1],
+        }
+    ],
+    "chat_names": {"8654123": "Custom Channel Name"},
     "media_types": ["audio", "voice"],
     "file_formats": {"audio": ["all"], "voice": ["all"]},
+    "refresh_interval": 0,
 }
+TG_CHANNEL_NAME = "TG Channel Name"
+CHANNEL_NAME = "Custom Channel Name"
 
 
 def platform_generic_path(_path: str) -> str:
@@ -49,6 +57,7 @@ def mock_manage_duplicate_file(file_path: str) -> str:
 class Chat:
     def __init__(self, chat_id):
         self.id = chat_id
+        self.title = CHANNEL_NAME
 
 
 class MockMessage:
@@ -103,7 +112,18 @@ class MockEventLoop:
         pass
 
     def run_until_complete(self, *args, **kwargs):
-        return {"api_id": 1, "api_hash": "asdf", "ids_to_retry": [1, 2, 3]}
+        return {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "chats": [
+                {
+                    "id": 12345,
+                    "last_read_message_id": 0,
+                    "ids_to_retry": [1, 2, 3],
+                }
+            ],
+            "refresh_interval": 0,
+        }
 
 
 class MockAsync:
@@ -114,13 +134,19 @@ class MockAsync:
         return MockEventLoop()
 
 
-async def async_get_media_meta(message_media, _type):
-    result = await _get_media_meta(message_media, _type)
+async def async_get_media_meta(message_media, _type, tg_chat_name, chat_name):
+    result = await _get_media_meta(
+        message_media, _type, tg_chat_name, chat_name
+    )
     return result
 
 
-async def async_download_media(client, message, media_types, file_formats):
-    result = await download_media(client, message, media_types, file_formats)
+async def async_download_media(
+    client, message, media_types, file_formats, chat_name, chat_id
+):
+    result = await download_media(
+        client, message, media_types, file_formats, chat_name, chat_id
+    )
     return result
 
 
@@ -133,9 +159,11 @@ async def mock_process_message(*args, **kwargs):
     return 5
 
 
-async def async_process_messages(client, messages, media_types, file_formats):
+async def async_process_messages(
+    client, messages, media_types, file_formats, chat_name, chat_id
+):
     result = await process_messages(
-        client, messages, media_types, file_formats
+        client, messages, media_types, file_formats, chat_name, chat_id
     )
     return result
 
@@ -245,13 +273,17 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.voice, "voice")
+            async_get_media_meta(
+                message.voice, "voice", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
 
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/voice/voice_2019-07-25T14:53:50.ogg"
+                    "/root/project/"
+                    + CHANNEL_NAME
+                    + "/voice/voice_2019-07-25T14:53:50.ogg"
                 ),
                 "ogg",
             ),
@@ -265,11 +297,15 @@ class MediaDownloaderTestCase(unittest.TestCase):
             photo=MockPhoto(date=1565015712),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.photo, "photo")
+            async_get_media_meta(
+                message.photo, "photo", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/photo/"),
+                platform_generic_path(
+                    "/root/project/" + CHANNEL_NAME + "/photo/"
+                ),
                 None,
             ),
             result,
@@ -285,12 +321,16 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.document, "document")
+            async_get_media_meta(
+                message.document, "document", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/document/sample_document.pdf"
+                    "/root/project/"
+                    + CHANNEL_NAME
+                    + "/document/sample_document.pdf"
                 ),
                 "pdf",
             ),
@@ -307,11 +347,15 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.audio, "audio")
+            async_get_media_meta(
+                message.audio, "audio", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/audio/sample_audio.mp3"),
+                platform_generic_path(
+                    "/root/project/" + CHANNEL_NAME + "/audio/sample_audio.mp3"
+                ),
                 "mp3",
             ),
             result,
@@ -326,11 +370,15 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.video, "video")
+            async_get_media_meta(
+                message.video, "video", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/video/"),
+                platform_generic_path(
+                    "/root/project/" + CHANNEL_NAME + "/video/"
+                ),
                 "mp4",
             ),
             result,
@@ -346,12 +394,16 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.video_note, "video_note")
+            async_get_media_meta(
+                message.video_note, "video_note", TG_CHANNEL_NAME, CHANNEL_NAME
+            )
         )
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/video_note/video_note_2019-07-25T14:53:50.mp4"
+                    "/root/project/"
+                    + CHANNEL_NAME
+                    + "/video_note/video_note_2019-07-25T14:53:50.mp4"
                 ),
                 "mp4",
             ),
@@ -373,7 +425,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message, ["video", "photo"], {"video": ["mp4"]}
+                client,
+                message,
+                ["video", "photo"],
+                {"video": ["mp4"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(5, result)
@@ -388,7 +445,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_1, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_1,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(6, result)
@@ -401,10 +463,16 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 file_name="sample_video.mov",
                 mime_type="video/mov",
             ),
+            chat=Chat(MOCK_CONF["chats"][0]["id"]),
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_2, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_2,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(7, result)
@@ -423,7 +491,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_3, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_3,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(8, result)
@@ -443,7 +516,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_4, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_4,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(9, result)
@@ -461,7 +539,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_5, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_5,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(10, result)
@@ -477,7 +560,12 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         result = self.loop.run_until_complete(
             async_download_media(
-                client, message_6, ["video", "photo"], {"video": ["all"]}
+                client,
+                message_6,
+                ["video", "photo"],
+                {"video": ["all"]},
+                CHANNEL_NAME,
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(11, result)
@@ -491,7 +579,10 @@ class MediaDownloaderTestCase(unittest.TestCase):
         conf = {
             "api_id": 123,
             "api_hash": "hasw5Tgawsuj67",
-            "ids_to_retry": [],
+            "chats": [
+                {"id": "afsepo", "ids_to_retry": [], "last_read_message_id": 0}
+            ],
+            "refresh_interval": 0,
         }
         update_config(conf)
         mock_open.assert_called_with("config.yaml", "w")
@@ -505,7 +596,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
     def test_begin_import(self, mock_update_config):
         result = self.loop.run_until_complete(async_begin_import(MOCK_CONF, 3))
         conf = copy.deepcopy(MOCK_CONF)
-        conf["last_read_message_id"] = 5
+        conf["chats"][0]["last_read_message_id"] = 5
         self.assertDictEqual(result, conf)
 
     def test_process_message(self):
@@ -540,6 +631,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 ],
                 ["voice", "photo"],
                 {"audio": ["all"], "voice": ["all"]},
+                "channel_name",
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(result, 1216)
@@ -581,6 +674,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 ],
                 ["voice", "photo"],
                 {"audio": ["all"], "voice": ["all"]},
+                "Chat Name",
+                MOCK_CONF["chats"][0]["id"],
             )
         )
         self.assertEqual(result, 1216)
@@ -623,12 +718,19 @@ class MediaDownloaderTestCase(unittest.TestCase):
         conf = {
             "api_id": 1,
             "api_hash": "asdf",
-            "ids_to_retry": [1, 2],
+            "chats": [
+                {
+                    "id": 12345,
+                    "last_read_message_id": 0,
+                    "ids_to_retry": [1, 2],
+                }
+            ],
+            "refresh_interval": 0,
         }
         mock_yaml.return_value = conf
         main()
         mock_import.assert_called_with(conf, pagination_limit=100)
-        conf["ids_to_retry"] = [1, 2, 3]
+        conf["chats"][0]["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(conf)
 
     @classmethod
