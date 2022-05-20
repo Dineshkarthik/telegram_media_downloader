@@ -19,7 +19,7 @@
 </h3>
 
 ### Overview:
-Download all media files from a conversation or a channel that you are a part of from telegram.
+Download all media files from multiple conversations or channels that you are a part of from telegram.
 A meta of last read/downloaded message is stored in the config file so that in such a way it won't download the same media file again.
 
 ### Support:
@@ -28,8 +28,6 @@ A meta of last read/downloaded message is stored in the config file so that in s
 |Language | `Python 3.6 ` and above|
 |Download media types|  audio, document, photo, video, video_note, voice|
 
-### ToDo:
-- Add support for multiple channels/chats.
 
 ### Installation
 
@@ -57,7 +55,7 @@ The very first step requires you to obtain a valid Telegram API key (API id/hash
 3.  Done! The API key consists of two parts:  **api_id**  and  **api_hash**.
 
 
-**Getting chat id:**
+**Getting chat id(s):**
 
 **1. Using web telegram:**
 1. Open https://web.telegram.org/?legacy=1#/im
@@ -75,14 +73,30 @@ The very first step requires you to obtain a valid Telegram API key (API id/hash
     - public or private channel: same as chats, just copy and send to the bot
     - id of any telegram bot
 
+**3. Set refresh interval:**
+
+If you want the script to look for new media periodically, you can set `refresh_interval` to the interval in minutes after which the script checks for new media.
+
+Set to 0 if you want the script to scan for new media automatically.
+
+
+**4. Rename Chat (Optional):**
+
+In case some chat name includes emojis or other characters you dont want in your file structure, you can provide an alternative name at `chat_names`.
+
+
+
 
 ### config.yaml
 ```yaml
 api_hash: your_api_hash
 api_id: your_api_id
-chat_id: telegram_chat_id
-last_read_message_id: 0
-ids_to_retry: []
+chat_names:
+  'chat_id': new_chat_name
+chats:
+- id: chat_id
+  ids_to_retry: []
+  last_read_message_id: 0
 media_types:
 - audio
 - document
@@ -97,13 +111,16 @@ file_formats:
   - epub
   video:
   - mp4
+refresh_interval: time in minutes
+
 ```
 
 - api_hash  - The api_hash you got from telegram apps
 - api_id - The api_id you got from telegram apps
-- chat_id -  The id of the chat/channel you want to download media. Which you get from the above-mentioned steps.
-- last_read_message_id - If it is the first time you are going to read the channel let it be `0` or if you have already used this script to download media it will have some numbers which are auto-updated after the scripts successful execution. Don't change it.
-- ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
+- chat_names - (Optionally) Set chat id following the new chat name.
+- chats -> chat_id -  The id of the chat/channel you want to download media. Which you get from the above-mentioned steps.
+- chats -> last_read_message_id - If it is the first time you are going to read the channel let it be `0` or if you have already used this script to download media it will have some numbers which are auto-updated after the scripts successful execution. Don't change it.
+- chats -> ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
 - media_types - Type of media to download, you can update which type of media you want to download it can be one or any of the available types.
 - file_formats - File types to download for supported media types which are `audio`, `document` and `video`. Default format is `all`, downloads all files.
 
@@ -115,12 +132,12 @@ All the downloaded media will be stored inside  respective direcotry named  in t
 
 | Media type | Download directory |
 |--|--|
-| audio | path/to/project/audio |
-| document | path/to/project/document |
-| photo | path/to/project/photo |
-| video | path/to/project/video |
-| voice | path/to/project/voice |
-| voice_note | path/to/project/voice_note |
+| audio | path/to/project/chat_name/audio |
+| document | path/to/project/chat_name/document |
+| photo | path/to/project/chat_name/photo |
+| video | path/to/project/chat_name/video |
+| voice | path/to/project/chat_name/voice |
+| voice_note | path/to/project/chat_name/voice_note |
 
 ## Proxy
 `Socks5` proxy is supported in this project currently. To use it, simply create a `config.ini` file in the path of this project, and edit it with your proxy server info as follow:
