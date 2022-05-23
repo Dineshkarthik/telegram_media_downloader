@@ -428,15 +428,6 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
             "last_read_message_id"
         ] = last_read_message_id
 
-        if FAILED_IDS[chat_id]:
-            logger.info(
-                "Downloading of %d files failed for chat id %s "
-                "Failed message ids are added to config file.\n"
-                "These files will be downloaded on the next run.",
-                len(set(FAILED_IDS)),
-                chat_name,
-            )
-
     await client.stop()
     return config
 
@@ -450,6 +441,15 @@ def main():
         updated_config = asyncio.get_event_loop().run_until_complete(
             begin_import(config, pagination_limit=100)
         )
+        for chat_id, failed_messages in FAILED_IDS.items():
+            if failed_messages:
+                logger.info(
+                    "Downloading of %d files failed for chat id %s "
+                    "Failed message ids are added to config file.\n"
+                    "These files will be downloaded on the next run.",
+                    len(set(failed_messages)),
+                    chat_id,
+                )
         update_config(updated_config)
         check_for_updates()
         refresh_interval = int(config["refresh_interval"])
@@ -458,7 +458,10 @@ def main():
         logger.info(
             "Going to sleep. trying again in %d minutes", refresh_interval
         )
-        sleep(refresh_interval * 60)
+        try:
+            sleep(refresh_interval * 60)
+        except InterruptedError:
+            break
 
 
 if __name__ == "__main__":

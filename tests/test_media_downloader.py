@@ -11,6 +11,7 @@ import pyrogram
 import pytest
 
 from media_downloader import (
+    DOWNLOADED_IDS,
     _get_media_meta,
     _can_download,
     _is_exist,
@@ -709,7 +710,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         result2 = _is_exist(this_dir)
         self.assertEqual(result2, False)
 
-    @mock.patch("media_downloader.FAILED_IDS", [2, 3])
+    @mock.patch("media_downloader.FAILED_IDS", {"asdf": [2, 3]})
     @mock.patch("media_downloader.yaml.safe_load")
     @mock.patch("media_downloader.update_config", return_value=True)
     @mock.patch("media_downloader.begin_import")
@@ -727,11 +728,36 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ],
             "refresh_interval": 0,
         }
+
         mock_yaml.return_value = conf
         main()
         mock_import.assert_called_with(conf, pagination_limit=100)
         conf["chats"][0]["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(conf)
+    
+    #only tests loop functionality
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    @mock.patch("media_downloader.begin_import")
+    @mock.patch("media_downloader.asyncio", new=MockAsync())
+    @mock.patch("media_downloader.sleep", side_effect=InterruptedError)
+    def test_main_sleep(self, mock_sleep, mock_import, mock_update, mock_yaml):
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "chats": [
+                {
+                    "id": 12345,
+                    "last_read_message_id": 0,
+                    "ids_to_retry": [],
+                }
+            ],
+            "refresh_interval": 1,
+        }
+
+        mock_yaml.return_value = conf
+        main()
+        mock_sleep.assert_called_with(conf["refresh_interval"] * 60)
 
     @classmethod
     def tearDownClass(cls):
