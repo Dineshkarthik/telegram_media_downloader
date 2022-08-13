@@ -1,6 +1,6 @@
-api_hash: your_api_hash
-api_id: your_api_id
-chat_id: telegram_chat_id
+api_hash: 6aff8a9bf1cce3db766e2ebfb9423520
+api_id: 13259570
+chat_id: fanchaclub
 last_read_message_id: 0
 ids_to_retry: []
 media_types:
@@ -17,3 +17,8 @@ file_formats:
   - all
   video:
   - all
+
+proxy:
+  scheme: socks5
+  hostname: 127.0.0.1
+  port: 7890
