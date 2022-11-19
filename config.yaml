@@ -17,3 +17,5 @@ file_formats:
   - all
   video:
   - all
+disable_syslog:
+- INFO

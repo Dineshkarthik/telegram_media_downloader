@@ -97,7 +97,9 @@ file_formats:
   - epub
   video:
   - mp4
-restart_program: true
+save_path: D:\telegram_media_downloader
+disable_syslog:
+- INFO
 ```
 
 - api_hash  - The api_hash you got from telegram apps
@@ -107,8 +109,8 @@ restart_program: true
 - ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
 - media_types - Type of media to download, you can update which type of media you want to download it can be one or any of the available types.
 - file_formats - File types to download for supported media types which are `audio`, `document` and `video`. Default format is `all`, downloads all files.
-- restart_program - This script will `restart` when exist download failed task if after download finish
 - save_path - Where you want to storge download file
+- disable_syslog - You can choose which types of logs to disable,see `logging._nameToLevel`
 ## Execution
 ```sh
 $ python3 media_downloader.py
