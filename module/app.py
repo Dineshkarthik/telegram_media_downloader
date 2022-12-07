@@ -1,6 +1,7 @@
 """Application module"""
 import os
 from typing import List
+
 import yaml
 
 # pylint: disable = R0902
@@ -23,7 +24,7 @@ class Application:
         self.reset()
 
         try:
-            with open(os.path.join(os.path.abspath('.'), self.config_file)) as f:
+            with open(os.path.join(os.path.abspath("."), self.config_file)) as f:
                 self.config = yaml.safe_load(f)
                 self.load_config(self.config)
         except Exception:
@@ -36,7 +37,7 @@ class Application:
         self.downloaded_ids: list = []
         self.failed_ids: list = []
         self.disable_syslog: list = []
-        self.save_path = os.path.abspath('.')
+        self.save_path = os.path.abspath(".")
         self.ids_to_retry: list = []
         self.api_id: str = ""
         self.api_hash: str = ""
@@ -115,8 +116,7 @@ class Application:
 
         # pylint: disable = W0201
         self.ids_to_retry = (
-            list(set(self.ids_to_retry) -
-                 set(self.downloaded_ids)) + self.failed_ids
+            list(set(self.ids_to_retry) - set(self.downloaded_ids)) + self.failed_ids
         )
 
         self.config["last_read_message_id"] = self.last_read_message_id

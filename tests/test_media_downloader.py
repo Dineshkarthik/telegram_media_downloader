@@ -12,11 +12,11 @@ from media_downloader import (
     _can_download,
     _get_media_meta,
     _is_exist,
+    app,
     begin_import,
     download_media,
     main,
     process_messages,
-    app,
 )
 
 MOCK_DIR: str = "/root/project"
@@ -30,7 +30,7 @@ MOCK_CONF = {
     "ids_to_retry": [1, 2],
     "media_types": ["audio", "voice"],
     "file_formats": {"audio": ["all"], "voice": ["all"]},
-    "save_path": MOCK_DIR
+    "save_path": MOCK_DIR,
 }
 
 
@@ -98,8 +98,9 @@ class MockMessage:
         self.voice = kwargs.get("voice", None)
         self.video_note = kwargs.get("video_note", None)
         if kwargs.get("dis_chat") == None:
-            self.chat = Chat(kwargs.get("chat_id", None),
-                             kwargs.get("chat_title", None))
+            self.chat = Chat(
+                kwargs.get("chat_id", None), kwargs.get("chat_title", None)
+            )
         else:
             self.chat = None
         self.date: datetime = None
@@ -293,7 +294,7 @@ class MockClient:
                         file_name="sample_video2.mov",
                         mime_type="video/mov",
                     ),
-                )
+                ),
             ]
         return []
 
@@ -348,16 +349,16 @@ class MediaDownloaderTestCase(unittest.TestCase):
             media=True,
             date=datetime(2019, 8, 5, 14, 35, 12),
             chat_title="test2",
-            photo=MockPhoto(date=datetime(2019, 8, 5, 14, 35,
-                            12), file_unique_id="ADAVKJYIFV"),
+            photo=MockPhoto(
+                date=datetime(2019, 8, 5, 14, 35, 12), file_unique_id="ADAVKJYIFV"
+            ),
         )
         result = self.loop.run_until_complete(
             async_get_media_meta(message, message.photo, "photo")
         )
         self.assertEqual(
             (
-                platform_generic_path(
-                    "/root/project/test2/2019_08/2 - ADAVKJYIFV.jpg"),
+                platform_generic_path("/root/project/test2/2019_08/2 - ADAVKJYIFV.jpg"),
                 "jpg",
             ),
             result,
@@ -378,8 +379,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path(
-                    "/root/project/test2/0/3 - sample_document.pdf"),
+                platform_generic_path("/root/project/test2/0/3 - sample_document.pdf"),
                 "pdf",
             ),
             result,
@@ -402,7 +402,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/test2/2021_08/4 - sample_audio.mp3"),
+                    "/root/project/test2/2021_08/4 - sample_audio.mp3"
+                ),
                 "mp3",
             ),
             result,
@@ -423,8 +424,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path(
-                    "/root/project/test2/2022_08/5 - None.mp4"),
+                platform_generic_path("/root/project/test2/2022_08/5 - None.mp4"),
                 "mp4",
             ),
             result,
@@ -446,8 +446,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path(
-                    "/root/project/test2/2022_08/5 - test.mp4"),
+                platform_generic_path("/root/project/test2/2022_08/5 - test.mp4"),
                 "mp4",
             ),
             result,
@@ -471,8 +470,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         print(app.chat_id)
         self.assertEqual(
             (
-                platform_generic_path(
-                    "/root/project/8654123/2022_08/5 - test.mp4"),
+                platform_generic_path("/root/project/8654123/2022_08/5 - test.mp4"),
                 "mp4",
             ),
             result,
@@ -723,7 +721,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
 
-        media_size = getattr(message.video, 'file_size')
+        media_size = getattr(message.video, "file_size")
         self.assertEqual(media_size, 1024)
 
         self.loop.run_until_complete(
