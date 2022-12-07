@@ -109,7 +109,7 @@ file_formats:
 
 ## Execution
 ```sh
-$ python3 media_downloader.py
+python3 media_downloader.py
 ```
 All the downloaded media will be stored inside  respective direcotry named  in the same path as the python script.
 
