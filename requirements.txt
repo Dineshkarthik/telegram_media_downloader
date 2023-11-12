@@ -2,3 +2,4 @@ https://github.com/Dineshkarthik/pyrogram/archive/refs/heads/master.zip
 PyYAML==6.0
 rich==12.5.1
 TgCrypto==1.2.3
+requests-toolbelt!=0.9.0,>=0.8.0
