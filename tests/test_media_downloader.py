@@ -1,8 +1,10 @@
 """Unittest module for media downloader."""
 import asyncio
+from contextlib import AbstractContextManager
 import copy
 import os
 import platform
+from typing import Any
 import unittest
 from datetime import datetime
 
@@ -118,9 +120,11 @@ async def async_get_media_meta(message_media, _type):
     return result
 
 
-async def async_download_media(client, message, media_types, file_formats):
-    result = await download_media(client, message, media_types, file_formats)
-    return result
+async def async_download_media(client, message, media_types, file_formats, upload_dir = None):
+    if upload_dir != None:
+        return await download_media(client, message, media_types, file_formats, upload_dir=upload_dir)
+    
+    return await download_media(client, message, media_types, file_formats)
 
 
 async def async_begin_import(conf, pagination_limit):
@@ -132,8 +136,8 @@ async def mock_process_message(*args, **kwargs):
     return 5
 
 
-async def async_process_messages(client, messages, media_types, file_formats):
-    result = await process_messages(client, messages, media_types, file_formats)
+async def async_process_messages(client, messages, media_types, file_formats, upload_dir):
+    result = await process_messages(client, messages, media_types, file_formats, upload_dir)
     return result
 
 
@@ -230,7 +234,6 @@ class MediaDownloaderTestCase(unittest.TestCase):
     def setUpClass(cls):
         cls.loop = asyncio.get_event_loop()
 
-    @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
     def test_get_media_meta(self):
         # Test Voice notes
         message = MockMessage(
@@ -248,7 +251,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/voice/voice_2019-07-25T14:53:50.ogg"
+                    "voice/voice_2019-07-25T14:53:50.ogg"
                 ),
                 "ogg",
             ),
@@ -266,7 +269,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/photo/"),
+                platform_generic_path("photo/"),
                 None,
             ),
             result,
@@ -286,7 +289,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/document/sample_document.pdf"),
+                platform_generic_path("document/sample_document.pdf"),
                 "pdf",
             ),
             result,
@@ -306,7 +309,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/audio/sample_audio.mp3"),
+                platform_generic_path("audio/sample_audio.mp3"),
                 "mp3",
             ),
             result,
@@ -325,7 +328,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/video/"),
+                platform_generic_path("video/"),
                 "mp4",
             ),
             result,
@@ -346,7 +349,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/video_note/video_note_2019-07-25T14:53:50.mp4"
+                    "video_note/video_note_2019-07-25T14:53:50.mp4"
                 ),
                 "mp4",
             ),
@@ -480,6 +483,35 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "Message[%d]: Timing out after 3 reties, download skipped.", 11
         )
 
+    @mock.patch.object(download_media,"__defaults__", (MOCK_DIR,))
+    def test_download_media_default_upload_dir(self):
+        client = mock.MagicMock()
+        message = MockMessage(
+            id=5,
+            media=True,
+            video=MockVideo(mime_type="video/mp4"),
+        )
+        self.loop.run_until_complete(
+            async_download_media(
+                client, message, ["video"], {"video": ["mp4"]}
+            )
+        )
+        client.download_media.assert_called_with(message, file_name=MOCK_DIR + "/video/")
+
+    def test_download_media_custom_upload_dir(self):
+        client = mock.MagicMock()
+        message = MockMessage(
+            id=5,
+            media=True,
+            video=MockVideo(mime_type="video/mp4"),
+        )
+        self.loop.run_until_complete(
+            async_download_media(
+                client, message, ["video"], {"video": ["mp4"]}, upload_dir= "/custom/path/"
+            )
+        )
+        client.download_media.assert_called_with(message, file_name="/custom/path/video/")
+
     @mock.patch("__main__.__builtins__.open", new_callable=mock.mock_open)
     @mock.patch("media_downloader.yaml", autospec=True)
     def test_update_config(self, mock_yaml, mock_open):
@@ -492,14 +524,27 @@ class MediaDownloaderTestCase(unittest.TestCase):
         mock_open.assert_called_with("config.yaml", "w")
         mock_yaml.dump.assert_called_with(conf, mock.ANY, default_flow_style=False)
 
+    @mock.patch("media_downloader.process_messages")
     @mock.patch("media_downloader.update_config")
     @mock.patch("media_downloader.pyrogram.Client", new=MockClient)
-    @mock.patch("media_downloader.process_messages", new=mock_process_message)
-    def test_begin_import(self, mock_update_config):
+    @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
+    def test_begin_import(self, mock_update_config, mock_process_messages):
+        mock_process_messages.return_value = 5
         result = self.loop.run_until_complete(async_begin_import(MOCK_CONF, 3))
         conf = copy.deepcopy(MOCK_CONF)
         conf["last_read_message_id"] = 5
         self.assertDictEqual(result, conf)
+        mock_process_messages.assert_called_with(mock.ANY, mock.ANY, mock.ANY, mock.ANY, MOCK_DIR)
+
+    @mock.patch("media_downloader.process_messages")
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.pyrogram.Client", new=MockClient)
+    def test_begin_import_upload_dir(self, mock_update_config, mock_process_messages):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["upload_dir"] = "/some/path/"
+        mock_process_messages.return_value = 1
+        self.loop.run_until_complete(async_begin_import(conf, 3))
+        mock_process_messages.assert_called_with(mock.ANY, mock.ANY, mock.ANY, mock.ANY, "/some/path/")
 
     def test_process_message(self):
         client = MockClient()
@@ -533,6 +578,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 ],
                 ["voice", "photo"],
                 {"audio": ["all"], "voice": ["all"]},
+                MOCK_DIR
             )
         )
         self.assertEqual(result, 1216)
@@ -574,6 +620,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 ],
                 ["voice", "photo"],
                 {"audio": ["all"], "voice": ["all"]},
+                MOCK_DIR
             )
         )
         self.assertEqual(result, 1216)
