@@ -311,7 +311,7 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
     await client.start()
     last_read_message_id: int = config["last_read_message_id"]
     messages_iter = client.get_chat_history(
-        config["chat_id"], offset_id=last_read_message_id, reverse=True
+        config["chat_id"], offset_id=last_read_message_id
     )
     messages_list: list = []
     pagination_count: int = 0
