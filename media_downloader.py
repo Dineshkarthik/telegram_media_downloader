@@ -192,7 +192,7 @@ def get_media_type(message: Message) -> Optional[str]:
     return None
 
 
-async def download_media(
+async def download_media(  # pylint: disable=too-many-locals
     client: TelegramClient,
     message: Message,
     media_types: List[str],
@@ -242,8 +242,10 @@ async def download_media(
             if _can_download(_type, file_formats, file_format):
                 # Create progress bar for download
                 file_size = getattr(media_obj, "size", 0)
-                # Use the original file name from media object if available, otherwise use generated name
-                display_name = getattr(media_obj, "file_name", os.path.basename(file_name))
+                # Use original file name if available, otherwise generated name
+                display_name = getattr(
+                    media_obj, "file_name", os.path.basename(file_name)
+                )
                 desc = f"Downloading {display_name}"
 
                 if _is_exist(file_name):

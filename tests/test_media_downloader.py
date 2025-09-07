@@ -142,12 +142,14 @@ class MockVideo:
         self.mime_type = kwargs["mime_type"]
         self.id = 123
         self.size = kwargs.get("size", 1024)  # Add size attribute for progress bar
+
         # Add video attribute for media type detection
         # Create a simple object instead of Mock to avoid file_name interference
         class VideoAttr:
             def __init__(self):
                 self.voice = None
                 self.round_message = False
+
         self.attributes = [VideoAttr()]
 
 
@@ -590,22 +592,27 @@ class MediaDownloaderTestCase(unittest.TestCase):
                 ids = kwargs.get("ids", kwargs.get("message_ids"))
                 if ids == 14:
                     # Return the same message that will fail again
-                    return [MockMessage(
-                        id=14,
-                        media=True,
-                        chat_id=345678,
-                        video=MockVideo(
-                            file_name="persistent_error.mp4",
-                            mime_type="video/mp4",
-                            size=1024,
-                        ),
-                    )]
+                    return [
+                        MockMessage(
+                            id=14,
+                            media=True,
+                            chat_id=345678,
+                            video=MockVideo(
+                                file_name="persistent_error.mp4",
+                                mime_type="video/mp4",
+                                size=1024,
+                            ),
+                        )
+                    ]
                 return await super().get_messages(*args, **kwargs)
 
         persistent_client = PersistentErrorClient()
         result = self.loop.run_until_complete(
             async_download_media(
-                persistent_client, message_persistent_error, ["video"], {"video": ["all"]}
+                persistent_client,
+                message_persistent_error,
+                ["video"],
+                {"video": ["all"]},
             )
         )
         self.assertEqual(14, result)
@@ -954,9 +961,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
         # Run the download
         result = self.loop.run_until_complete(
-            async_download_media(
-                mock_client, message, ["video"], {"video": ["all"]}
-            )
+            async_download_media(mock_client, message, ["video"], {"video": ["all"]})
         )
 
         # Verify progress bar was created
@@ -970,7 +975,9 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
     @mock.patch("media_downloader.tqdm")
     @mock.patch("media_downloader._is_exist", return_value=True)
-    def test_download_media_existing_file_with_progress_bar(self, mock_is_exist, mock_tqdm):
+    def test_download_media_existing_file_with_progress_bar(
+        self, mock_is_exist, mock_tqdm
+    ):
         """Test progress bar creation when file already exists."""
         # Setup mocks
         mock_client = MockClient()
@@ -991,9 +998,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
         # Run the download
         result = self.loop.run_until_complete(
-            async_download_media(
-                mock_client, message, ["video"], {"video": ["all"]}
-            )
+            async_download_media(mock_client, message, ["video"], {"video": ["all"]})
         )
 
         # Verify progress bar was created for existing file
@@ -1036,9 +1041,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
         # Run the download
         result = self.loop.run_until_complete(
-            async_download_media(
-                mock_client, message, ["video"], {"video": ["all"]}
-            )
+            async_download_media(mock_client, message, ["video"], {"video": ["all"]})
         )
 
         # Verify callback was passed and is callable
