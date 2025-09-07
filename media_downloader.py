@@ -16,6 +16,7 @@ from telethon.tl.types import (
     MessageMediaPhoto,
     Photo,
 )
+from tqdm import tqdm
 
 from utils.file_management import get_next_name, manage_duplicate_file
 from utils.log import LogFilter
@@ -96,6 +97,25 @@ def _is_exist(file_path: str) -> bool:
         True if the file exists else False.
     """
     return not os.path.isdir(file_path) and os.path.exists(file_path)
+
+
+def _progress_callback(current: int, total: int, pbar: tqdm) -> None:
+    """
+    Update progress bar for file downloads.
+
+    Parameters
+    ----------
+    current: int
+        Current number of bytes downloaded.
+    total: int
+        Total number of bytes to download.
+    pbar: tqdm
+        Progress bar instance to update.
+    """
+    if pbar.total != total:
+        pbar.total = total
+        pbar.reset()
+    pbar.update(current - pbar.n)
 
 
 async def _get_media_meta(
@@ -220,12 +240,40 @@ async def download_media(
                 return message.id
             file_name, file_format = await _get_media_meta(media_obj, _type)
             if _can_download(_type, file_formats, file_format):
+                # Create progress bar for download
+                file_size = getattr(media_obj, "size", 0)
+                # Use the original file name from media object if available, otherwise use generated name
+                display_name = getattr(media_obj, "file_name", os.path.basename(file_name))
+                desc = f"Downloading {display_name}"
+
                 if _is_exist(file_name):
                     file_name = get_next_name(file_name)
-                    download_path = await client.download_media(message, file=file_name)
-                    download_path = manage_duplicate_file(download_path)  # type: ignore
+                    with tqdm(
+                        total=file_size, unit="B", unit_scale=True, desc=desc
+                    ) as pbar:
+                        # pylint: disable=cell-var-from-loop
+                        download_path = await client.download_media(
+                            message,
+                            file=file_name,
+                            progress_callback=lambda c, t: _progress_callback(
+                                c, t, pbar
+                            ),
+                        )
+                        download_path = manage_duplicate_file(
+                            download_path
+                        )  # type: ignore
                 else:
-                    download_path = await client.download_media(message, file=file_name)
+                    with tqdm(
+                        total=file_size, unit="B", unit_scale=True, desc=desc
+                    ) as pbar:
+                        # pylint: disable=cell-var-from-loop
+                        download_path = await client.download_media(
+                            message,
+                            file=file_name,
+                            progress_callback=lambda c, t: _progress_callback(
+                                c, t, pbar
+                            ),
+                        )
                 if download_path:
                     logger.info("Media downloaded - %s", download_path)
                 DOWNLOADED_IDS.append(message.id)
@@ -234,7 +282,7 @@ async def download_media(
             logger.warning(
                 "Message[%d]: file reference expired, refetching...", message.id
             )
-            messages = await client.get_messages(message.chat_id, ids=message.id)
+            messages = await client.get_messages(message.chat.id, ids=message.id)
             message = messages[0] if messages else message
             if retry == 2:
                 logger.error(
