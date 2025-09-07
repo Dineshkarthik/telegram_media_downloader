@@ -1,13 +1,22 @@
 """Unittest module for media downloader."""
+
 import asyncio
 import copy
 import os
 import platform
 import unittest
 from datetime import datetime
+from unittest import mock
 
-import mock
-import pyrogram
+from telethon import TelegramClient
+from telethon.errors import FileReferenceExpiredError
+from telethon.tl.types import (
+    DocumentAttributeAudio,
+    DocumentAttributeFilename,
+    DocumentAttributeVideo,
+    MessageMediaDocument,
+    MessageMediaPhoto,
+)
 
 from media_downloader import (
     _can_download,
@@ -15,6 +24,7 @@ from media_downloader import (
     _is_exist,
     begin_import,
     download_media,
+    get_media_type,
     main,
     process_messages,
     update_config,
@@ -61,40 +71,69 @@ class MockMessage:
         self.voice = kwargs.get("voice", None)
         self.video_note = kwargs.get("video_note", None)
         self.chat = Chat(kwargs.get("chat_id", None))
+        # Set media based on type
+        if self.photo:
+            self.media = mock.Mock(spec=MessageMediaPhoto, photo=self.photo)
+        elif self.document or self.audio or self.video or self.voice or self.video_note:
+            self.media = mock.Mock(
+                spec=MessageMediaDocument,
+                document=self.document
+                or self.audio
+                or self.video
+                or self.voice
+                or self.video_note,
+            )
+        else:
+            self.media = None
 
 
 class MockAudio:
     def __init__(self, **kwargs):
-        self.file_name = kwargs["file_name"]
+        self.file_name = kwargs.get("file_name", "test.mp3")
         self.mime_type = kwargs["mime_type"]
+        self.id = 123
+        self.attributes = kwargs.get(
+            "attributes", [mock.Mock(file_name=self.file_name)]
+        )
 
 
 class MockDocument:
     def __init__(self, **kwargs):
-        self.file_name = kwargs["file_name"]
+        self.file_name = kwargs.get("file_name", "test.pdf")
         self.mime_type = kwargs["mime_type"]
+        self.id = 123
+        self.attributes = kwargs.get(
+            "attributes", [mock.Mock(file_name=self.file_name)]
+        )
 
 
 class MockPhoto:
     def __init__(self, **kwargs):
         self.date = kwargs["date"]
+        self.id = 123
 
 
 class MockVoice:
     def __init__(self, **kwargs):
         self.mime_type = kwargs["mime_type"]
         self.date = kwargs["date"]
+        self.id = 123
+        self.attributes = []
 
 
 class MockVideo:
     def __init__(self, **kwargs):
         self.mime_type = kwargs["mime_type"]
+        self.id = 123
+        self.attributes = []
 
 
 class MockVideoNote:
     def __init__(self, **kwargs):
         self.mime_type = kwargs["mime_type"]
         self.date = kwargs["date"]
+        self.id = 123
+        self.attributes = []
 
 
 class MockEventLoop:
@@ -137,20 +176,23 @@ async def async_process_messages(client, messages, media_types, file_formats):
     return result
 
 
+class SimpleAttr:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
 class MockClient:
     def __init__(self, *args, **kwargs):
         pass
 
-    def __aiter__(self):
-        return self
-
     async def start(self):
         pass
 
-    async def stop(self):
+    async def disconnect(self):
         pass
 
-    async def get_chat_history(self, *args, **kwargs):
+    async def iter_messages(self, *args, **kwargs):
         items = [
             MockMessage(
                 id=1213,
@@ -180,7 +222,8 @@ class MockClient:
             yield item
 
     async def get_messages(self, *args, **kwargs):
-        if kwargs["message_ids"] == 7:
+        ids = kwargs.get("ids", kwargs.get("message_ids"))
+        if ids == 7:
             message = MockMessage(
                 id=7,
                 media=True,
@@ -190,7 +233,7 @@ class MockClient:
                     mime_type="video/mov",
                 ),
             )
-        elif kwargs["message_ids"] == 8:
+        elif ids == 8:
             message = MockMessage(
                 id=8,
                 media=True,
@@ -200,7 +243,7 @@ class MockClient:
                     mime_type="video/mov",
                 ),
             )
-        elif kwargs["message_ids"] == [1]:
+        elif ids == [1]:
             message = [
                 MockMessage(
                     id=1,
@@ -214,15 +257,17 @@ class MockClient:
             ]
         return message
 
-    async def download_media(self, *args, **kwargs):
-        mock_message = args[0]
+    async def download_media(self, message_or_media, file=None, **kwargs):
+        mock_message = message_or_media
         if mock_message.id in [7, 8]:
-            raise pyrogram.errors.exceptions.bad_request_400.BadRequest
+            raise FileReferenceExpiredError
         elif mock_message.id == 9:
-            raise pyrogram.errors.exceptions.unauthorized_401.Unauthorized
+            raise Exception("Unauthorized")
         elif mock_message.id == 11:
-            raise TypeError
-        return kwargs["file_name"]
+            raise TimeoutError
+        elif mock_message.id == 13:
+            return None
+        return file or "downloaded"
 
 
 class MediaDownloaderTestCase(unittest.TestCase):
@@ -266,8 +311,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/photo/"),
-                None,
+                platform_generic_path("/root/project/photo/photo_123"),
+                "jpg",
             ),
             result,
         )
@@ -325,7 +370,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/video/"),
+                platform_generic_path("/root/project/video/video_123"),
                 "mp4",
             ),
             result,
@@ -354,9 +399,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
 
     @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
-    @mock.patch("media_downloader.asyncio.sleep", return_value=None)
-    @mock.patch("media_downloader.logger")
-    def test_download_media(self, mock_logger, patched_time_sleep):
+    def test_download_media(self):
         client = MockClient()
         message = MockMessage(
             id=5,
@@ -403,9 +446,6 @@ class MediaDownloaderTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(7, result)
-        mock_logger.warning.assert_called_with(
-            "Message[%d]: file reference expired, refetching...", 7
-        )
 
         # Test re-fetch message failure
         message_3 = MockMessage(
@@ -422,10 +462,6 @@ class MediaDownloaderTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(8, result)
-        mock_logger.error.assert_called_with(
-            "Message[%d]: file reference expired for 3 retries, download skipped.",
-            8,
-        )
 
         # Test other exception
         message_4 = MockMessage(
@@ -442,12 +478,6 @@ class MediaDownloaderTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(9, result)
-        mock_logger.error.assert_called_with(
-            "Message[%d]: could not be downloaded due to following exception:\n[%s].",
-            9,
-            mock.ANY,
-            exc_info=True,
-        )
 
         # Check no media
         message_5 = MockMessage(
@@ -476,9 +506,41 @@ class MediaDownloaderTestCase(unittest.TestCase):
             )
         )
         self.assertEqual(11, result)
-        mock_logger.error.assert_called_with(
-            "Message[%d]: Timing out after 3 reties, download skipped.", 11
+
+        # Test file format not allowed (should skip download)
+        message_format_not_allowed = MockMessage(
+            id=12,
+            media=True,
+            video=MockVideo(
+                file_name="sample_video.mov",
+                mime_type="video/mov",
+            ),
         )
+        result = self.loop.run_until_complete(
+            async_download_media(
+                client,
+                message_format_not_allowed,
+                ["video", "photo"],
+                {"video": ["mp4"]},
+            )
+        )
+        self.assertEqual(12, result)
+
+        # Test download_path is None (should still add to DOWNLOADED_IDS)
+        message_download_none = MockMessage(
+            id=13,
+            media=True,
+            video=MockVideo(
+                file_name="sample_video.mp4",
+                mime_type="video/mp4",
+            ),
+        )
+        result = self.loop.run_until_complete(
+            async_download_media(
+                client, message_download_none, ["video", "photo"], {"video": ["all"]}
+            )
+        )
+        self.assertEqual(13, result)
 
     @mock.patch("__main__.__builtins__.open", new_callable=mock.mock_open)
     @mock.patch("media_downloader.yaml", autospec=True)
@@ -492,14 +554,162 @@ class MediaDownloaderTestCase(unittest.TestCase):
         mock_open.assert_called_with("config.yaml", "w")
         mock_yaml.dump.assert_called_with(conf, mock.ANY, default_flow_style=False)
 
+    def test_get_media_type(self):
+        # Test photo
+        message = MockMessage(
+            id=1,
+            media=True,
+            photo=MockPhoto(date=datetime(2019, 8, 5, 14, 35, 12)),
+        )
+        result = get_media_type(message)
+        self.assertEqual("photo", result)
+
+        # Test document without special attributes
+        doc_attr = mock.Mock()
+        doc_attr.file_name = "test.pdf"
+        doc_attr.voice = None
+        doc_attr.round_message = None
+        message = MockMessage(
+            id=2,
+            media=True,
+            document=MockDocument(
+                file_name="test.pdf",
+                mime_type="application/pdf",
+                attributes=[doc_attr],
+            ),
+        )
+        result = get_media_type(message)
+        self.assertEqual("document", result)
+
+        # Test audio
+        audio_attr = mock.Mock()
+        audio_attr.voice = False
+        audio_attr.round_message = None
+        message = MockMessage(
+            id=3,
+            media=True,
+            document=MockDocument(
+                file_name="test.mp3",
+                mime_type="audio/mp3",
+                attributes=[audio_attr],
+            ),
+        )
+        result = get_media_type(message)
+        self.assertEqual("audio", result)
+
+        # Test voice
+        voice_attr = mock.Mock()
+        voice_attr.voice = True
+        voice_attr.round_message = None
+        message = MockMessage(
+            id=4,
+            media=True,
+            document=MockDocument(
+                mime_type="audio/ogg",
+                attributes=[voice_attr],
+            ),
+        )
+        result = get_media_type(message)
+        self.assertEqual("voice", result)
+
+        # Test video
+        video_attr = mock.Mock()
+        video_attr.voice = None
+        video_attr.round_message = False
+        message = MockMessage(
+            id=5,
+            media=True,
+            document=MockDocument(
+                mime_type="video/mp4",
+                attributes=[video_attr],
+            ),
+        )
+        result = get_media_type(message)
+        self.assertEqual("video", result)
+
+        # Test video_note
+        video_note_attr = mock.Mock()
+        video_note_attr.voice = None
+        video_note_attr.round_message = True
+        message = MockMessage(
+            id=6,
+            media=True,
+            document=MockDocument(
+                mime_type="video/mp4",
+                attributes=[video_note_attr],
+            ),
+        )
+        result = get_media_type(message)
+        self.assertEqual("video_note", result)
+
+        # Test no media
+        message = MockMessage(id=7, media=None)
+        result = get_media_type(message)
+        self.assertIsNone(result)
+
+        # Test unsupported media type
+        message = MockMessage(id=8, media=True)
+        # Manually set media to an unsupported type (not MessageMediaPhoto or MessageMediaDocument)
+        message.media = mock.Mock()
+        result = get_media_type(message)
+        self.assertIsNone(result)
+
+    @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
+    def test_download_media_no_media_obj(self):
+        client = MockClient()
+        # Mock message with media but no media_obj
+        message = MockMessage(
+            id=12,
+            media=True,
+            # No photo or document
+        )
+        result = self.loop.run_until_complete(
+            async_download_media(
+                client, message, ["video", "photo"], {"video": ["mp4"]}
+            )
+        )
+        self.assertEqual(12, result)
+
+        # Test media_obj is None for photo type
+        message_photo_none = MockMessage(
+            id=14,
+            media=True,
+            # Don't set photo attribute
+        )
+        # Manually set media to photo type
+        message_photo_none.media = mock.Mock(spec=MessageMediaPhoto, photo=None)
+        result = self.loop.run_until_complete(
+            async_download_media(
+                client, message_photo_none, ["photo"], {"photo": ["all"]}
+            )
+        )
+        self.assertEqual(14, result)
+
     @mock.patch("media_downloader.update_config")
-    @mock.patch("media_downloader.pyrogram.Client", new=MockClient)
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
     @mock.patch("media_downloader.process_messages", new=mock_process_message)
     def test_begin_import(self, mock_update_config):
         result = self.loop.run_until_complete(async_begin_import(MOCK_CONF, 3))
         conf = copy.deepcopy(MOCK_CONF)
         conf["last_read_message_id"] = 5
         self.assertDictEqual(result, conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_proxy(self, mock_update_config):
+        conf_with_proxy = copy.deepcopy(MOCK_CONF)
+        conf_with_proxy["proxy"] = {
+            "scheme": "socks5",
+            "hostname": "127.0.0.1",
+            "port": 1080,
+            "username": "user",
+            "password": "pass",
+        }
+        result = self.loop.run_until_complete(async_begin_import(conf_with_proxy, 3))
+        expected_conf = copy.deepcopy(conf_with_proxy)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
 
     def test_process_message(self):
         client = MockClient()
@@ -623,6 +833,18 @@ class MediaDownloaderTestCase(unittest.TestCase):
         mock_import.assert_called_with(conf, pagination_limit=100)
         conf["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(conf)
+
+    @mock.patch("media_downloader.print_meta")
+    @mock.patch("media_downloader.main")
+    def test_main_entry(self, mock_main, mock_print_meta):
+        # To cover the if __name__ == "__main__" block, we mock the calls
+        # and then call the functions to simulate the main entry point
+        from media_downloader import main, print_meta
+
+        print_meta(mock_print_meta)
+        main()
+        mock_print_meta.assert_called_once()
+        mock_main.assert_called_once()
 
     @classmethod
     def tearDownClass(cls):

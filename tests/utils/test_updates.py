@@ -1,9 +1,10 @@
 """Unittest module for update checker."""
+
 import os
 import sys
 import unittest
+from unittest import mock
 
-import mock
 from rich.markdown import Markdown
 
 sys.path.append("..")  # Adds higher directory to python modules path.
@@ -43,7 +44,9 @@ class UpdatesTestCase(unittest.TestCase):
     def test_update(self, mock_markdown, mock_console):
         check_for_updates()
         name: str = "v0.0.0 2022-03-02"
-        html_url: str = "https://github.com/Dineshkarthik/telegram_media_downloader/releases/tag/v0.0.0"
+        html_url: str = (
+            "https://github.com/Dineshkarthik/telegram_media_downloader/releases/tag/v0.0.0"
+        )
         expected_message: str = (
             f"## New version of Telegram-Media-Downloader is available - {name}\n"
             "You are using an outdated version v0.0.1 please pull in the changes using `git pull` or download the latest release.\n\n"

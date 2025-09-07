@@ -1,4 +1,5 @@
 """Utility module to check for new release of telegram-media-downloader"""
+
 import http.client
 import json
 

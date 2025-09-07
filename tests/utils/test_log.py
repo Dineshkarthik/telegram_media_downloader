@@ -1,9 +1,9 @@
 """Unittest module for log handlers."""
+
 import os
 import sys
 import unittest
-
-import mock
+from unittest import mock
 
 sys.path.append("..")  # Adds higher directory to python modules path.
 from utils.log import LogFilter

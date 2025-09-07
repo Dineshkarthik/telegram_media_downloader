@@ -1,11 +1,11 @@
 """Unittest module for media downloader."""
+
 import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-import mock
+from unittest import mock
 
 sys.path.append("..")  # Adds higher directory to python modules path.
 from utils.file_management import get_next_name, manage_duplicate_file

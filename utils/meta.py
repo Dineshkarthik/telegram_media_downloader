@@ -1,4 +1,5 @@
 """Utility module to manage meta info."""
+
 import platform
 
 from rich.console import Console

@@ -1,4 +1,5 @@
 """Util module to handle logs."""
+
 import logging
 
 
