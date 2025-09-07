@@ -1,4 +1,3 @@
-https://github.com/Dineshkarthik/pyrogram/archive/refs/heads/master.zip
-PyYAML==6.0
-rich==12.5.1
-TgCrypto==1.2.3
+PyYAML>=6.0.2
+rich==13.7.1
+telethon>=1.38.0

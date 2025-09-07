@@ -25,26 +25,60 @@ A meta of last read/downloaded message is stored in the config file so that in s
 ### Support:
 | Category | Support |
 |--|--|
-|Language | `Python 3.7 ` and above|
+|Language | `Python 3.8 ` and above|
 |Download media types|  audio, document, photo, video, video_note, voice|
 
 ### ToDo:
 - Add support for multiple channels/chats.
 
+## ⚠️ Version 3.0.0 - Breaking Changes
+
+**This version (3.0.0) contains breaking changes** due to migration from **Pyrogram** to **Telethon**.
+
+### What's Changed:
+- **Backend Migration**: Complete migration from Pyrogram to Telethon library
+- **API Changes**: Some configuration options may have changed
+- **Dependencies**: Updated to use Telethon-specific dependencies
+- **Python Requirement**: Now requires Python 3.8 or higher (previously 3.7+)
+
+### Migration Guide:
+If you're upgrading from a previous version:
+1. **Backup your `config.yaml`** and downloaded media
+2. **Use `make install`** to ensure all dependencies are properly installed
+3. **Review your configuration** as some options may have changed
+4. **Test with a small channel first** to verify everything works
+
 ### Installation
 
-For *nix os distributions with `make` availability
+> **⚠️ Important**: For version 3.0.0, we strongly recommend using `make install` to ensure all dependencies are properly installed with correct Python version compatibility.
+
+#### For *nix OS distributions with `make` availability (Recommended):
 ```sh
 $ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
 $ cd telegram_media_downloader
 $ make install
 ```
-For Windows which doesn't have `make` inbuilt
+
+#### For Windows or systems without `make`:
 ```sh
 $ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
 $ cd telegram_media_downloader
 $ pip3 install -r requirements.txt
 ```
+
+> **Note**: The `make install` command automatically detects your Python version and installs the appropriate dependencies for optimal compatibility.
+
+### Development Installation
+
+For contributors and developers who need additional development tools:
+
+```sh
+$ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
+$ cd telegram_media_downloader
+$ make dev_install  # Installs both runtime and development dependencies
+```
+
+> **Note**: `make dev_install` also automatically detects your Python version and installs version-specific development dependencies.
 
 ## Configuration
 

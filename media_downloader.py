@@ -1,17 +1,25 @@
 """Downloads media from telegram."""
+
 import asyncio
 import logging
 import os
 from typing import List, Optional, Tuple, Union
 
-import pyrogram
 import yaml
-from pyrogram.types import Audio, Document, Photo, Video, VideoNote, Voice
 from rich.logging import RichHandler
+from telethon import TelegramClient
+from telethon.errors import FileReferenceExpiredError
+from telethon.tl.types import (
+    Document,
+    Message,
+    MessageMediaDocument,
+    MessageMediaPhoto,
+    Photo,
+)
 
 from utils.file_management import get_next_name, manage_duplicate_file
 from utils.log import LogFilter
-from utils.meta import print_meta
+from utils.meta import APP_VERSION, DEVICE_MODEL, LANG_CODE, SYSTEM_VERSION, print_meta
 from utils.updates import check_for_updates
 
 logging.basicConfig(
@@ -20,8 +28,8 @@ logging.basicConfig(
     datefmt="[%X]",
     handlers=[RichHandler()],
 )
-logging.getLogger("pyrogram.session.session").addFilter(LogFilter())
-logging.getLogger("pyrogram.client").addFilter(LogFilter())
+logging.getLogger("telethon.client.downloads").addFilter(LogFilter())
+logging.getLogger("telethon.network").addFilter(LogFilter())
 logger = logging.getLogger("media_downloader")
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -91,14 +99,14 @@ def _is_exist(file_path: str) -> bool:
 
 
 async def _get_media_meta(
-    media_obj: Union[Audio, Document, Photo, Video, VideoNote, Voice],
+    media_obj: Union[Document, Photo],
     _type: str,
 ) -> Tuple[str, Optional[str]]:
     """Extract file name and file id from media object.
 
     Parameters
     ----------
-    media_obj: Union[Audio, Document, Photo, Video, VideoNote, Voice]
+    media_obj: Union[Document, Photo]
         Media object to be extracted.
     _type: str
         Type of media object.
@@ -108,34 +116,65 @@ async def _get_media_meta(
     Tuple[str, Optional[str]]
         file_name, file_format
     """
-    if _type in ["audio", "document", "video"]:
-        # pylint: disable = C0301
-        file_format: Optional[str] = media_obj.mime_type.split("/")[-1]  # type: ignore
-    else:
-        file_format = None
+    file_format: Optional[str] = None
+    if hasattr(media_obj, "mime_type") and media_obj.mime_type:
+        file_format = media_obj.mime_type.split("/")[-1]
+    elif _type == "photo":
+        file_format = "jpg"
 
     if _type in ["voice", "video_note"]:
-        # pylint: disable = C0209
-        file_format = media_obj.mime_type.split("/")[-1]  # type: ignore
         file_name: str = os.path.join(
             THIS_DIR,
             _type,
-            "{}_{}.{}".format(
-                _type,
-                media_obj.date.isoformat(),  # type: ignore
-                file_format,
-            ),
+            f"{_type}_{media_obj.date.isoformat()}.{file_format}",
         )
     else:
-        file_name = os.path.join(
-            THIS_DIR, _type, getattr(media_obj, "file_name", None) or ""
-        )
+        file_name_base = ""
+        if hasattr(media_obj, "attributes"):
+            for attr in media_obj.attributes:
+                if hasattr(attr, "file_name"):
+                    file_name_base = attr.file_name
+                    break
+        if file_name_base == "":
+            if hasattr(media_obj, "id"):
+                file_name_base = f"{_type}_{media_obj.id}"
+        file_name = os.path.join(THIS_DIR, _type, file_name_base)
     return file_name, file_format
 
 
+def get_media_type(message: Message) -> Optional[str]:
+    """
+    Determine the media type from the message's media attributes.
+
+    Parameters
+    ----------
+    message: Message
+        The Telethon message object.
+
+    Returns
+    -------
+    Optional[str]
+        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document')
+        or None.
+    """
+    if not message.media:
+        return None
+    if isinstance(message.media, MessageMediaPhoto):
+        return "photo"
+    if isinstance(message.media, MessageMediaDocument):
+        doc = message.media.document
+        for attr in doc.attributes:
+            if hasattr(attr, "voice") and isinstance(attr.voice, bool):
+                return "voice" if attr.voice else "audio"
+            if hasattr(attr, "round_message") and isinstance(attr.round_message, bool):
+                return "video_note" if attr.round_message else "video"
+        return "document"
+    return None
+
+
 async def download_media(
-    client: pyrogram.client.Client,
-    message: pyrogram.types.Message,
+    client: TelegramClient,
+    message: Message,
     media_types: List[str],
     file_formats: dict,
 ):
@@ -147,18 +186,19 @@ async def download_media(
 
     Parameters
     ----------
-    client: pyrogram.client.Client
+    client: TelegramClient
         Client to interact with Telegram APIs.
-    message: pyrogram.types.Message
+    message: Message
         Message object retrieved from telegram.
     media_types: list
         List of strings of media types to be downloaded.
-        Ex : `["audio", "photo"]`
+        Ex : ["audio", "photo"]
         Supported formats:
             * audio
             * document
             * photo
             * video
+            * video_note
             * voice
     file_formats: dict
         Dictionary containing the list of file_formats
@@ -172,62 +212,53 @@ async def download_media(
     """
     for retry in range(3):
         try:
-            if message.media is None:
+            _type = get_media_type(message)
+            if not _type or _type not in media_types:
                 return message.id
-            for _type in media_types:
-                _media = getattr(message, _type, None)
-                if _media is None:
-                    continue
-                file_name, file_format = await _get_media_meta(_media, _type)
-                if _can_download(_type, file_formats, file_format):
-                    if _is_exist(file_name):
-                        file_name = get_next_name(file_name)
-                        download_path = await client.download_media(
-                            message, file_name=file_name
-                        )
-                        # pylint: disable = C0301
-                        download_path = manage_duplicate_file(download_path)  # type: ignore
-                    else:
-                        download_path = await client.download_media(
-                            message, file_name=file_name
-                        )
-                    if download_path:
-                        logger.info("Media downloaded - %s", download_path)
-                    DOWNLOADED_IDS.append(message.id)
+            media_obj = message.photo if _type == "photo" else message.document
+            if not media_obj:
+                return message.id
+            file_name, file_format = await _get_media_meta(media_obj, _type)
+            if _can_download(_type, file_formats, file_format):
+                if _is_exist(file_name):
+                    file_name = get_next_name(file_name)
+                    download_path = await client.download_media(message, file=file_name)
+                    download_path = manage_duplicate_file(download_path)  # type: ignore
+                else:
+                    download_path = await client.download_media(message, file=file_name)
+                if download_path:
+                    logger.info("Media downloaded - %s", download_path)
+                DOWNLOADED_IDS.append(message.id)
             break
-        except pyrogram.errors.exceptions.bad_request_400.BadRequest:
+        except FileReferenceExpiredError:
             logger.warning(
-                "Message[%d]: file reference expired, refetching...",
-                message.id,
+                "Message[%d]: file reference expired, refetching...", message.id
             )
-            message = await client.get_messages(  # type: ignore
-                chat_id=message.chat.id,  # type: ignore
-                message_ids=message.id,
-            )
+            messages = await client.get_messages(message.chat_id, ids=message.id)
+            message = messages[0] if messages else message
             if retry == 2:
-                # pylint: disable = C0301
                 logger.error(
-                    "Message[%d]: file reference expired for 3 retries, download skipped.",
+                    "Message[%d]: file reference expired, skipping download.",
                     message.id,
                 )
                 FAILED_IDS.append(message.id)
-        except TypeError:
-            # pylint: disable = C0301
+        except TimeoutError:
             logger.warning(
-                "Timeout Error occurred when downloading Message[%d], retrying after 5 seconds",
+                "Timeout Error occurred when downloading Message[%d], "
+                "retrying after 5 seconds",
                 message.id,
             )
             await asyncio.sleep(5)
             if retry == 2:
                 logger.error(
-                    "Message[%d]: Timing out after 3 reties, download skipped.",
+                    "Message[%d]: Timing out after 3 retries, download skipped.",
                     message.id,
                 )
                 FAILED_IDS.append(message.id)
         except Exception as e:
-            # pylint: disable = C0301
             logger.error(
-                "Message[%d]: could not be downloaded due to following exception:\n[%s].",
+                "Message[%d]: could not be downloaded due to following "
+                "exception:\n[%s].",
                 message.id,
                 e,
                 exc_info=True,
@@ -238,8 +269,8 @@ async def download_media(
 
 
 async def process_messages(
-    client: pyrogram.client.Client,
-    messages: List[pyrogram.types.Message],
+    client: TelegramClient,
+    messages: List[Message],
     media_types: List[str],
     file_formats: dict,
 ) -> int:
@@ -248,7 +279,7 @@ async def process_messages(
 
     Parameters
     ----------
-    client: pyrogram.client.Client
+    client: TelegramClient
         Client to interact with Telegram APIs.
     messages: list
         List of telegram messages.
@@ -260,6 +291,7 @@ async def process_messages(
             * document
             * photo
             * video
+            * video_note
             * voice
     file_formats: dict
         Dictionary containing the list of file_formats
@@ -284,16 +316,16 @@ async def process_messages(
 
 async def begin_import(config: dict, pagination_limit: int) -> dict:
     """
-    Create pyrogram client and initiate download.
+    Create telethon client and initiate download.
 
-    The pyrogram client is created using the ``api_id``, ``api_hash``
+    The telethon client is created using the ``api_id``, ``api_hash``
     from the config and iter through message offset on the
     ``last_message_id`` and the requested file_formats.
 
     Parameters
     ----------
     config: dict
-        Dict containing the config to create pyrogram client.
+        Dict containing the config to create telethon client.
     pagination_limit: int
         Number of message to download asynchronously as a batch.
 
@@ -302,23 +334,37 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
     dict
         Updated configuration to be written into config file.
     """
-    client = pyrogram.Client(
+    proxy = config.get("proxy")
+    proxy_dict = None
+    if proxy:
+        proxy_dict = {
+            "proxy_type": proxy["scheme"],
+            "addr": proxy["hostname"],
+            "port": proxy["port"],
+            "username": proxy.get("username"),
+            "password": proxy.get("password"),
+        }
+    client = TelegramClient(
         "media_downloader",
         api_id=config["api_id"],
         api_hash=config["api_hash"],
-        proxy=config.get("proxy"),
+        proxy=proxy_dict,
+        device_model=DEVICE_MODEL,
+        system_version=SYSTEM_VERSION,
+        app_version=APP_VERSION,
+        lang_code=LANG_CODE,
     )
     await client.start()
     last_read_message_id: int = config["last_read_message_id"]
-    messages_iter = client.get_chat_history(
-        config["chat_id"], offset_id=last_read_message_id, reverse=True
+    messages_iter = client.iter_messages(
+        config["chat_id"], min_id=last_read_message_id + 1, reverse=True
     )
     messages_list: list = []
     pagination_count: int = 0
     if config["ids_to_retry"]:
         logger.info("Downloading files failed during last run...")
         skipped_messages: list = await client.get_messages(  # type: ignore
-            chat_id=config["chat_id"], message_ids=config["ids_to_retry"]
+            config["chat_id"], ids=config["ids_to_retry"]
         )
         for message in skipped_messages:
             pagination_count += 1
@@ -348,7 +394,7 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
             config["file_formats"],
         )
 
-    await client.stop()
+    await client.disconnect()
     config["last_read_message_id"] = last_read_message_id
     return config
 

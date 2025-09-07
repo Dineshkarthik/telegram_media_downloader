@@ -1,9 +1,9 @@
 """Unittest module for media downloader."""
+
 import os
 import sys
 import unittest
-
-import mock
+from unittest import mock
 
 sys.path.append("..")  # Adds higher directory to python modules path.
 from utils.meta import print_meta
