@@ -14,7 +14,7 @@ repos:
         entry: black
         types: [python]
 -   repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+    rev: 5.13.2
     hooks:
     -   id: isort
         name: isort
