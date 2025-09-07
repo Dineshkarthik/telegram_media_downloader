@@ -7,6 +7,7 @@ import platform
 import unittest
 from datetime import datetime
 from unittest import mock
+from unittest.mock import patch
 
 from telethon import TelegramClient
 from telethon.errors import FileReferenceExpiredError
@@ -22,6 +23,7 @@ from media_downloader import (
     _can_download,
     _get_media_meta,
     _is_exist,
+    _progress_callback,
     begin_import,
     download_media,
     get_media_type,
@@ -75,14 +77,27 @@ class MockMessage:
         if self.photo:
             self.media = mock.Mock(spec=MessageMediaPhoto, photo=self.photo)
         elif self.document or self.audio or self.video or self.voice or self.video_note:
-            self.media = mock.Mock(
-                spec=MessageMediaDocument,
-                document=self.document
+            # Set the appropriate document attribute based on what's provided
+            media_obj = (
+                self.document
                 or self.audio
                 or self.video
                 or self.voice
-                or self.video_note,
+                or self.video_note
             )
+            self.media = mock.Mock(
+                spec=MessageMediaDocument,
+                document=media_obj,
+            )
+            # Also set the individual attribute for consistency
+            if self.video:
+                self.document = self.video
+            elif self.audio:
+                self.document = self.audio
+            elif self.voice:
+                self.document = self.voice
+            elif self.video_note:
+                self.document = self.video_note
         else:
             self.media = None
 
@@ -123,9 +138,17 @@ class MockVoice:
 
 class MockVideo:
     def __init__(self, **kwargs):
+        self.file_name = kwargs.get("file_name", "test.mp4")
         self.mime_type = kwargs["mime_type"]
         self.id = 123
-        self.attributes = []
+        self.size = kwargs.get("size", 1024)  # Add size attribute for progress bar
+        # Add video attribute for media type detection
+        # Create a simple object instead of Mock to avoid file_name interference
+        class VideoAttr:
+            def __init__(self):
+                self.voice = None
+                self.round_message = False
+        self.attributes = [VideoAttr()]
 
 
 class MockVideoNote:
@@ -542,6 +565,51 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(13, result)
 
+        # Test FileReferenceExpiredError that persists until max retries (covers lines 282-292)
+        message_persistent_error = MockMessage(
+            id=14,  # Use ID 14 which isn't in the MockClient's special cases
+            media=True,
+            chat_id=345678,
+            video=MockVideo(
+                file_name="persistent_error.mp4",
+                mime_type="video/mp4",
+                size=1024,
+            ),
+        )
+
+        # Create a custom mock client that always raises FileReferenceExpiredError for ID 14
+        class PersistentErrorClient(MockClient):
+            async def download_media(self, message_or_media, file=None, **kwargs):
+                mock_message = message_or_media
+                if mock_message.id == 14:
+                    # Create a proper FileReferenceExpiredError with required parameters
+                    raise FileReferenceExpiredError(request=None)
+                return await super().download_media(message_or_media, file, **kwargs)
+
+            async def get_messages(self, *args, **kwargs):
+                ids = kwargs.get("ids", kwargs.get("message_ids"))
+                if ids == 14:
+                    # Return the same message that will fail again
+                    return [MockMessage(
+                        id=14,
+                        media=True,
+                        chat_id=345678,
+                        video=MockVideo(
+                            file_name="persistent_error.mp4",
+                            mime_type="video/mp4",
+                            size=1024,
+                        ),
+                    )]
+                return await super().get_messages(*args, **kwargs)
+
+        persistent_client = PersistentErrorClient()
+        result = self.loop.run_until_complete(
+            async_download_media(
+                persistent_client, message_persistent_error, ["video"], {"video": ["all"]}
+            )
+        )
+        self.assertEqual(14, result)
+
     @mock.patch("__main__.__builtins__.open", new_callable=mock.mock_open)
     @mock.patch("media_downloader.yaml", autospec=True)
     def test_update_config(self, mock_yaml, mock_open):
@@ -845,6 +913,142 @@ class MediaDownloaderTestCase(unittest.TestCase):
         main()
         mock_print_meta.assert_called_once()
         mock_main.assert_called_once()
+
+    def test_progress_callback_function(self):
+        """Test the _progress_callback function works correctly."""
+        from tqdm import tqdm
+
+        # Test initial callback with total
+        with tqdm(total=100, unit="B", unit_scale=True, desc="Test") as pbar:
+            _progress_callback(0, 100, pbar)
+            self.assertEqual(pbar.total, 100)
+            self.assertEqual(pbar.n, 0)
+
+            # Test progress update
+            _progress_callback(50, 100, pbar)
+            self.assertEqual(pbar.n, 50)
+
+            # Test completion
+            _progress_callback(100, 100, pbar)
+            self.assertEqual(pbar.n, 100)
+
+    @mock.patch("media_downloader.tqdm")
+    def test_download_media_with_progress_bar(self, mock_tqdm):
+        """Test that progress bar is created and used during downloads."""
+        # Setup mocks
+        mock_client = MockClient()
+        mock_pbar = mock.Mock()
+        mock_tqdm.return_value.__enter__ = mock.Mock(return_value=mock_pbar)
+        mock_tqdm.return_value.__exit__ = mock.Mock(return_value=None)
+
+        # Create test message with video that has size
+        message = MockMessage(
+            id=15,
+            media=True,
+            video=MockVideo(
+                file_name="test_video.mp4",
+                mime_type="video/mp4",
+                size=1024,
+            ),
+        )
+
+        # Run the download
+        result = self.loop.run_until_complete(
+            async_download_media(
+                mock_client, message, ["video"], {"video": ["all"]}
+            )
+        )
+
+        # Verify progress bar was created
+        self.assertEqual(result, 15)
+        mock_tqdm.assert_called_once()
+        call_args = mock_tqdm.call_args
+        self.assertEqual(call_args[1]["total"], 1024)
+        self.assertEqual(call_args[1]["unit"], "B")
+        self.assertEqual(call_args[1]["unit_scale"], True)
+        self.assertIn("test_video.mp4", call_args[1]["desc"])
+
+    @mock.patch("media_downloader.tqdm")
+    @mock.patch("media_downloader._is_exist", return_value=True)
+    def test_download_media_existing_file_with_progress_bar(self, mock_is_exist, mock_tqdm):
+        """Test progress bar creation when file already exists."""
+        # Setup mocks
+        mock_client = MockClient()
+        mock_pbar = mock.Mock()
+        mock_tqdm.return_value.__enter__ = mock.Mock(return_value=mock_pbar)
+        mock_tqdm.return_value.__exit__ = mock.Mock(return_value=None)
+
+        # Create test message with video that has size
+        message = MockMessage(
+            id=16,
+            media=True,
+            video=MockVideo(
+                file_name="existing_video.mp4",
+                mime_type="video/mp4",
+                size=2048,
+            ),
+        )
+
+        # Run the download
+        result = self.loop.run_until_complete(
+            async_download_media(
+                mock_client, message, ["video"], {"video": ["all"]}
+            )
+        )
+
+        # Verify progress bar was created for existing file
+        self.assertEqual(result, 16)
+        mock_tqdm.assert_called_once()
+        call_args = mock_tqdm.call_args
+        self.assertEqual(call_args[1]["total"], 2048)
+        self.assertIn("existing_video.mp4", call_args[1]["desc"])
+
+    @mock.patch("media_downloader.tqdm")
+    def test_progress_callback_called_during_download(self, mock_tqdm):
+        """Test that progress callback is properly passed to download_media."""
+        # Setup mocks
+        mock_client = MockClient()
+        mock_pbar = mock.Mock()
+        mock_pbar.n = 0  # Set initial progress to 0
+        mock_tqdm.return_value.__enter__ = mock.Mock(return_value=mock_pbar)
+        mock_tqdm.return_value.__exit__ = mock.Mock(return_value=None)
+
+        # Create test message with video that has size
+        message = MockMessage(
+            id=17,
+            media=True,
+            video=MockVideo(
+                file_name="callback_test.mp4",
+                mime_type="video/mp4",
+                size=1024,
+            ),
+        )
+
+        # Mock the client's download_media to capture the progress_callback
+        captured_callback = None
+
+        async def mock_download_media(*args, **kwargs):
+            nonlocal captured_callback
+            captured_callback = kwargs.get("progress_callback")
+            return "downloaded"
+
+        mock_client.download_media = mock_download_media
+
+        # Run the download
+        result = self.loop.run_until_complete(
+            async_download_media(
+                mock_client, message, ["video"], {"video": ["all"]}
+            )
+        )
+
+        # Verify callback was passed and is callable
+        self.assertEqual(result, 17)
+        self.assertIsNotNone(captured_callback)
+        self.assertTrue(callable(captured_callback))
+
+        # Test the captured callback
+        captured_callback(50, 100)
+        mock_pbar.update.assert_called_with(50)
 
     @classmethod
     def tearDownClass(cls):
