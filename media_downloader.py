@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from datetime import date, datetime, timezone
 from typing import List, Optional, Tuple, Union
 
 import yaml
@@ -233,6 +234,7 @@ async def download_media(  # pylint: disable=too-many-locals
     for retry in range(3):
         try:
             _type = get_media_type(message)
+            logger.debug("Processing message %s of type %s", message.id, _type)
             if not _type or _type not in media_types:
                 return message.id
             media_obj = message.photo if _type == "photo" else message.document
@@ -247,6 +249,7 @@ async def download_media(  # pylint: disable=too-many-locals
                     media_obj, "file_name", os.path.basename(file_name)
                 )
                 desc = f"Downloading {display_name}"
+                logger.info(desc)
 
                 if _is_exist(file_name):
                     file_name = get_next_name(file_name)
@@ -278,6 +281,7 @@ async def download_media(  # pylint: disable=too-many-locals
                         )
                 if download_path:
                     logger.info("Media downloaded - %s", download_path)
+                    logger.debug("Successfully downloaded message %s", message.id)
                 DOWNLOADED_IDS.append(message.id)
             break
         except FileReferenceExpiredError:
@@ -359,12 +363,14 @@ async def process_messages(
             for message in messages
         ]
     )
-
+    logger.info("Processed batch of %d messages", len(messages))
     last_message_id: int = max(message_ids)
     return last_message_id
 
 
-async def begin_import(config: dict, pagination_limit: int) -> dict:
+async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
+    config: dict, pagination_limit: int
+) -> dict:
     """
     Create telethon client and initiate download.
 
@@ -406,6 +412,38 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
     )
     await client.start()
     last_read_message_id: int = config["last_read_message_id"]
+    start_date_val = config.get("start_date")
+    if isinstance(start_date_val, str) and start_date_val.strip():
+        start_date = datetime.fromisoformat(start_date_val)
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+    elif isinstance(start_date_val, date):
+        start_date = datetime.combine(
+            start_date_val, datetime.min.time(), tzinfo=timezone.utc
+        )
+    else:
+        start_date = None
+    logger.info("Start date filter: %s", start_date or "None")
+    end_date_val = config.get("end_date")
+    if isinstance(end_date_val, str) and end_date_val.strip():
+        end_date = datetime.fromisoformat(end_date_val)
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+    elif isinstance(end_date_val, date):
+        end_date = datetime.combine(
+            end_date_val, datetime.min.time(), tzinfo=timezone.utc
+        )
+    else:
+        end_date = None
+    logger.info("End date filter: %s", end_date or "None")
+    max_messages_val = config.get("max_messages")
+    if isinstance(max_messages_val, int):
+        max_messages = max_messages_val
+    elif isinstance(max_messages_val, str) and max_messages_val.strip():
+        max_messages = int(max_messages_val)
+    else:
+        max_messages = None
+    logger.info("Max messages to download: %s", max_messages or "Unlimited")
     messages_iter = client.iter_messages(
         config["chat_id"], min_id=last_read_message_id + 1, reverse=True
     )
@@ -421,6 +459,10 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
             messages_list.append(message)
 
     async for message in messages_iter:  # type: ignore
+        if end_date and message.date > end_date:
+            continue
+        if start_date and message.date < start_date:
+            break
         if pagination_count != pagination_limit:
             pagination_count += 1
             messages_list.append(message)
@@ -431,6 +473,8 @@ async def begin_import(config: dict, pagination_limit: int) -> dict:
                 config["media_types"],
                 config["file_formats"],
             )
+            if max_messages and len(DOWNLOADED_IDS) >= max_messages:
+                break
             pagination_count = 0
             messages_list = []
             messages_list.append(message)

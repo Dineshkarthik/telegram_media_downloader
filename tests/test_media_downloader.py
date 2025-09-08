@@ -5,7 +5,7 @@ import copy
 import os
 import platform
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest import mock
 from unittest.mock import patch
 
@@ -43,6 +43,9 @@ MOCK_CONF = {
     "ids_to_retry": [1],
     "media_types": ["audio", "voice"],
     "file_formats": {"audio": ["all"], "voice": ["all"]},
+    "start_date": None,
+    "end_date": None,
+    "max_messages": None,
 }
 
 
@@ -73,6 +76,7 @@ class MockMessage:
         self.voice = kwargs.get("voice", None)
         self.video_note = kwargs.get("video_note", None)
         self.chat = Chat(kwargs.get("chat_id", None))
+        self.date = kwargs.get("date", datetime.now(timezone.utc))
         # Set media based on type
         if self.photo:
             self.media = mock.Mock(spec=MessageMediaPhoto, photo=self.photo)
@@ -783,6 +787,39 @@ class MediaDownloaderTestCase(unittest.TestCase):
         }
         result = self.loop.run_until_complete(async_begin_import(conf_with_proxy, 3))
         expected_conf = copy.deepcopy(conf_with_proxy)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_start_date(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["start_date"] = "2023-01-01"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_end_date(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["end_date"] = "2023-12-31"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_messages(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_messages"] = 10
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
         expected_conf["last_read_message_id"] = 5
         self.assertDictEqual(result, expected_conf)
 
