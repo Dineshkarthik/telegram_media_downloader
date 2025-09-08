@@ -17,3 +17,8 @@ file_formats:
   - all
   video:
   - all
+
+#optiopnal
+start_date: null
+end_date: null
+max_messages: null
