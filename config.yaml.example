@@ -1,0 +1,24 @@
+api_hash: your_api_hash
+api_id: your_api_id
+chat_id: telegram_chat_id
+last_read_message_id: 0
+ids_to_retry: []
+media_types:
+- audio
+- photo
+- video
+- document
+- voice
+- video_note
+file_formats:
+  audio:
+  - all
+  document:
+  - all
+  video:
+  - all
+
+#optional
+start_date: null
+end_date: null
+max_messages: null
