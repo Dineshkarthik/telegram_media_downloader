@@ -122,6 +122,7 @@ def _progress_callback(current: int, total: int, pbar: tqdm) -> None:
 async def _get_media_meta(
     media_obj: Union[Document, Photo],
     _type: str,
+    download_directory: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
     """Extract file name and file id from media object.
 
@@ -131,6 +132,8 @@ async def _get_media_meta(
         Media object to be extracted.
     _type: str
         Type of media object.
+    download_directory: Optional[str]
+        Custom directory path for downloads. If None, uses default structure.
 
     Returns
     -------
@@ -143,9 +146,12 @@ async def _get_media_meta(
     elif _type == "photo":
         file_format = "jpg"
 
+    # Determine base directory for downloads
+    base_dir = download_directory if download_directory else THIS_DIR
+
     if _type in ["voice", "video_note"]:
         file_name: str = os.path.join(
-            THIS_DIR,
+            base_dir,
             _type,
             f"{_type}_{media_obj.date.isoformat()}.{file_format}",
         )
@@ -159,7 +165,7 @@ async def _get_media_meta(
         if file_name_base == "":
             if hasattr(media_obj, "id"):
                 file_name_base = f"{_type}_{media_obj.id}"
-        file_name = os.path.join(THIS_DIR, _type, file_name_base)
+        file_name = os.path.join(base_dir, _type, file_name_base)
     return file_name, file_format
 
 
@@ -198,6 +204,7 @@ async def download_media(  # pylint: disable=too-many-locals
     message: Message,
     media_types: List[str],
     file_formats: dict,
+    download_directory: Optional[str] = None,
 ):
     """
     Download media from Telegram.
@@ -225,6 +232,8 @@ async def download_media(  # pylint: disable=too-many-locals
         Dictionary containing the list of file_formats
         to be downloaded for `audio`, `document` & `video`
         media types.
+    download_directory: Optional[str]
+        Custom directory path for downloads. If None, uses default structure.
 
     Returns
     -------
@@ -240,7 +249,9 @@ async def download_media(  # pylint: disable=too-many-locals
             media_obj = message.photo if _type == "photo" else message.document
             if not media_obj:
                 return message.id
-            file_name, file_format = await _get_media_meta(media_obj, _type)
+            file_name, file_format = await _get_media_meta(
+                media_obj, _type, download_directory
+            )
             if _can_download(_type, file_formats, file_format):
                 # Create progress bar for download
                 file_size = getattr(media_obj, "size", 0)
@@ -327,6 +338,7 @@ async def process_messages(
     messages: List[Message],
     media_types: List[str],
     file_formats: dict,
+    download_directory: Optional[str] = None,
 ) -> int:
     """
     Download media from Telegram.
@@ -351,6 +363,8 @@ async def process_messages(
         Dictionary containing the list of file_formats
         to be downloaded for `audio`, `document` & `video`
         media types.
+    download_directory: Optional[str]
+        Custom directory path for downloads. If None, uses default structure.
 
     Returns
     -------
@@ -359,7 +373,9 @@ async def process_messages(
     """
     message_ids = await asyncio.gather(
         *[
-            download_media(client, message, media_types, file_formats)
+            download_media(
+                client, message, media_types, file_formats, download_directory
+            )
             for message in messages
         ]
     )
@@ -444,6 +460,18 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         max_messages = None
     logger.info("Max messages to download: %s", max_messages or "Unlimited")
+    download_directory_val = config.get("download_directory")
+    if isinstance(download_directory_val, str) and download_directory_val.strip():
+        download_directory = download_directory_val.strip()
+        # Convert to absolute path if relative
+        if not os.path.isabs(download_directory):
+            download_directory = os.path.abspath(download_directory)
+        # Create directory if it doesn't exist
+        os.makedirs(download_directory, exist_ok=True)
+        logger.info("Custom download directory: %s", download_directory)
+    else:
+        download_directory = None
+        logger.info("Download directory: Default")
     messages_iter = client.iter_messages(
         config["chat_id"], min_id=last_read_message_id + 1, reverse=True
     )
@@ -472,6 +500,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
                 messages_list,
                 config["media_types"],
                 config["file_formats"],
+                download_directory,
             )
             if max_messages and len(DOWNLOADED_IDS) >= max_messages:
                 break
@@ -486,6 +515,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
             messages_list,
             config["media_types"],
             config["file_formats"],
+            download_directory,
         )
 
     await client.disconnect()

@@ -43,6 +43,7 @@ MOCK_CONF = {
     "ids_to_retry": [1],
     "media_types": ["audio", "voice"],
     "file_formats": {"audio": ["all"], "voice": ["all"]},
+    "download_directory": None,
     "start_date": None,
     "end_date": None,
     "max_messages": None,
@@ -183,6 +184,11 @@ class MockAsync:
 
 async def async_get_media_meta(message_media, _type):
     result = await _get_media_meta(message_media, _type)
+    return result
+
+
+async def async_get_media_meta_custom_dir(message_media, _type, download_directory):
+    result = await _get_media_meta(message_media, _type, download_directory)
     return result
 
 
@@ -423,6 +429,89 @@ class MediaDownloaderTestCase(unittest.TestCase):
                     "/root/project/video_note/video_note_2019-07-25T14:53:50.mp4"
                 ),
                 "mp4",
+            ),
+            result,
+        )
+
+    def test_get_media_meta_custom_directory(self):
+        """Test _get_media_meta with custom download directory."""
+        custom_dir = "/custom/downloads"
+
+        # Test Voice notes with custom directory
+        message = MockMessage(
+            id=1,
+            media=True,
+            voice=MockVoice(
+                mime_type="audio/ogg",
+                date=datetime(2019, 7, 25, 14, 53, 50),
+            ),
+        )
+        result = self.loop.run_until_complete(
+            async_get_media_meta_custom_dir(message.voice, "voice", custom_dir)
+        )
+        self.assertEqual(
+            (
+                platform_generic_path(
+                    "/custom/downloads/voice/voice_2019-07-25T14:53:50.ogg"
+                ),
+                "ogg",
+            ),
+            result,
+        )
+
+        # Test photos with custom directory
+        message = MockMessage(
+            id=2,
+            media=True,
+            photo=MockPhoto(date=datetime(2019, 8, 5, 14, 35, 12)),
+        )
+        result = self.loop.run_until_complete(
+            async_get_media_meta_custom_dir(message.photo, "photo", custom_dir)
+        )
+        self.assertEqual(
+            (
+                platform_generic_path("/custom/downloads/photo/photo_123"),
+                "jpg",
+            ),
+            result,
+        )
+
+        # Test Documents with custom directory
+        message = MockMessage(
+            id=3,
+            media=True,
+            document=MockDocument(
+                file_name="sample_document.pdf",
+                mime_type="application/pdf",
+            ),
+        )
+        result = self.loop.run_until_complete(
+            async_get_media_meta_custom_dir(message.document, "document", custom_dir)
+        )
+        self.assertEqual(
+            (
+                platform_generic_path("/custom/downloads/document/sample_document.pdf"),
+                "pdf",
+            ),
+            result,
+        )
+
+        # Test default behavior when download_directory is None
+        result = self.loop.run_until_complete(
+            async_get_media_meta_custom_dir(message.document, "document", None)
+        )
+        # Should use the actual THIS_DIR (project root)
+        expected_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "document",
+            "sample_document.pdf",
+        )
+        expected_path = os.path.abspath(expected_path)
+        self.assertEqual(
+            (
+                platform_generic_path(expected_path),
+                "pdf",
             ),
             result,
         )
@@ -787,6 +876,17 @@ class MediaDownloaderTestCase(unittest.TestCase):
         }
         result = self.loop.run_until_complete(async_begin_import(conf_with_proxy, 3))
         expected_conf = copy.deepcopy(conf_with_proxy)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_custom_directory(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["download_directory"] = "custom_downloads"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
         expected_conf["last_read_message_id"] = 5
         self.assertDictEqual(result, expected_conf)
 
