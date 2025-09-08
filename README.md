@@ -143,6 +143,7 @@ file_formats:
   - all
 
 # Optional filters
+download_directory: null  # Custom directory path for downloads (absolute or relative path)
 start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-01' or '2023-01-01T00:00:00')
 end_date: null    # Filter messages before this date (ISO format)
 max_messages: null  # Limit the number of media items to download (integer)
@@ -155,6 +156,7 @@ max_messages: null  # Limit the number of media items to download (integer)
 - ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
 - media_types - Type of media to download, you can update which type of media you want to download it can be one or any of the available types.
 - file_formats - File types to download for supported media types which are `audio`, `document` and `video`. Default format is `all`, downloads all files.
+- download_directory - Optional: Custom directory path where media files will be downloaded. Can be absolute or relative path. If `null`, uses default directory structure. The directory will be created if it doesn't exist.
 - start_date - Optional: Filter messages to download only those sent after this date (ISO format, e.g., '2023-01-01'). Leave as `null` to disable.
 - end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave as `null` to disable.
 - max_messages - Optional: Limit the number of media items to download (integer). Leave as `null` for unlimited.
@@ -163,9 +165,12 @@ max_messages: null  # Limit the number of media items to download (integer)
 ```sh
 $ python3 media_downloader.py
 ```
-All the downloaded media will be stored inside  respective direcotry named  in the same path as the python script.
 
-| Media type | Download directory |
+### Download Directories
+
+By default, all downloaded media will be stored in respective directories named after the media type in the same path as the python script.
+
+| Media type | Default Download directory |
 |--|--|
 | audio | path/to/project/audio |
 | document | path/to/project/document |
@@ -173,6 +178,17 @@ All the downloaded media will be stored inside  respective direcotry named  in t
 | video | path/to/project/video |
 | voice | path/to/project/voice |
 | voice_note | path/to/project/voice_note |
+
+#### Custom Download Directory
+
+You can specify a custom download directory by setting the `download_directory` option in your `config.yaml`. This allows you to organize all downloads in a single custom location while maintaining the media type subdirectories.
+
+**Examples:**
+- `download_directory: "/home/user/downloads/telegram"` (absolute path)
+- `download_directory: "downloads/telegram"` (relative path)
+- `download_directory: null` (use default directory structure)
+
+If the specified directory doesn't exist, it will be automatically created. The media type subdirectories (audio/, photo/, etc.) will still be created within your custom directory.
 
 ## Proxy
 `socks4, socks5, http` proxies are supported in this project currently. To use it, add the following to the bottom of your `config.yaml` file
