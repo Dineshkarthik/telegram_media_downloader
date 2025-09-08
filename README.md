@@ -82,7 +82,17 @@ $ make dev_install  # Installs both runtime and development dependencies
 
 ## Configuration
 
-All the configurations are  passed to the Telegram Media Downloader via `config.yaml` file.
+All the configurations are passed to the Telegram Media Downloader via `config.yaml` file.
+
+### Setup Configuration
+
+1. Copy `config.yaml.example` to `config.yaml`:
+   ```sh
+   cp config.yaml.example config.yaml
+   ```
+2. Update the values in `config.yaml` with your specific details (API keys, chat ID, etc.).
+
+> **Note**: `config.yaml` is ignored by git to prevent accidental commits of sensitive information. Always use `config.yaml.example` as the template.
 
 **Getting your API Keys:**
 The very first step requires you to obtain a valid Telegram API key (API id/hash pair):
@@ -123,14 +133,19 @@ media_types:
 - photo
 - video
 - voice
+- video_note
 file_formats:
   audio:
   - all
   document:
-  - pdf
-  - epub
+  - all
   video:
-  - mp4
+  - all
+
+# Optional filters
+start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-01' or '2023-01-01T00:00:00')
+end_date: null    # Filter messages before this date (ISO format)
+max_messages: null  # Limit the number of media items to download (integer)
 ```
 
 - api_hash  - The api_hash you got from telegram apps
@@ -140,6 +155,9 @@ file_formats:
 - ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
 - media_types - Type of media to download, you can update which type of media you want to download it can be one or any of the available types.
 - file_formats - File types to download for supported media types which are `audio`, `document` and `video`. Default format is `all`, downloads all files.
+- start_date - Optional: Filter messages to download only those sent after this date (ISO format, e.g., '2023-01-01'). Leave as `null` to disable.
+- end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave as `null` to disable.
+- max_messages - Optional: Limit the number of media items to download (integer). Leave as `null` for unlimited.
 
 ## Execution
 ```sh

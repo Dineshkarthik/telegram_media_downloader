@@ -5,7 +5,7 @@ import copy
 import os
 import platform
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest import mock
 from unittest.mock import patch
 
@@ -43,6 +43,9 @@ MOCK_CONF = {
     "ids_to_retry": [1],
     "media_types": ["audio", "voice"],
     "file_formats": {"audio": ["all"], "voice": ["all"]},
+    "start_date": None,
+    "end_date": None,
+    "max_messages": None,
 }
 
 
@@ -73,6 +76,7 @@ class MockMessage:
         self.voice = kwargs.get("voice", None)
         self.video_note = kwargs.get("video_note", None)
         self.chat = Chat(kwargs.get("chat_id", None))
+        self.date = kwargs.get("date", datetime.now(timezone.utc))
         # Set media based on type
         if self.photo:
             self.media = mock.Mock(spec=MessageMediaPhoto, photo=self.photo)
@@ -786,6 +790,63 @@ class MediaDownloaderTestCase(unittest.TestCase):
         expected_conf["last_read_message_id"] = 5
         self.assertDictEqual(result, expected_conf)
 
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_start_date(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["start_date"] = "2023-01-01"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_end_date(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["end_date"] = "2023-12-31"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_messages(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_messages"] = 10
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_messages_string(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_messages"] = "15"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_start_date_date_object(self, mock_update_config):
+        conf = copy.deepcopy(MOCK_CONF)
+        from datetime import date
+
+        conf["start_date"] = date(2023, 1, 1)  # Pass date object instead of string
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
     def test_process_message(self):
         client = MockClient()
         result = self.loop.run_until_complete(
@@ -908,6 +969,27 @@ class MediaDownloaderTestCase(unittest.TestCase):
         mock_import.assert_called_with(conf, pagination_limit=100)
         conf["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(conf)
+
+    @mock.patch("media_downloader.FAILED_IDS", [1, 2, 3])
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    @mock.patch("media_downloader.begin_import")
+    @mock.patch("media_downloader.asyncio", new=MockAsync())
+    def test_main_with_failed_ids(self, mock_import, mock_update, mock_yaml):
+        """Test main function when FAILED_IDS contains items to cover logging"""
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [],
+        }
+        mock_yaml.return_value = conf
+        mock_import.return_value = conf
+        main()
+        mock_import.assert_called_with(conf, pagination_limit=100)
+        # FAILED_IDS should be added to ids_to_retry
+        expected_conf = conf.copy()
+        expected_conf["ids_to_retry"] = [1, 2, 3]
+        mock_update.assert_called_with(expected_conf)
 
     @mock.patch("media_downloader.print_meta")
     @mock.patch("media_downloader.main")
