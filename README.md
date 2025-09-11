@@ -54,16 +54,16 @@ If you're upgrading from a previous version:
 
 #### For *nix OS distributions with `make` availability (Recommended):
 ```sh
-$ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
-$ cd telegram_media_downloader
-$ make install
+git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
+cd telegram_media_downloader
+make install
 ```
 
 #### For Windows or systems without `make`:
 ```sh
-$ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
-$ cd telegram_media_downloader
-$ pip3 install -r requirements.txt
+git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
+cd telegram_media_downloader
+pip3 install -r requirements.txt
 ```
 
 > **Note**: The `make install` command automatically detects your Python version and installs the appropriate dependencies for optimal compatibility.
@@ -73,9 +73,9 @@ $ pip3 install -r requirements.txt
 For contributors and developers who need additional development tools:
 
 ```sh
-$ git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
-$ cd telegram_media_downloader
-$ make dev_install  # Installs both runtime and development dependencies
+git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
+cd telegram_media_downloader
+make dev_install  # Installs both runtime and development dependencies
 ```
 
 > **Note**: `make dev_install` also automatically detects your Python version and installs version-specific development dependencies.
@@ -163,7 +163,7 @@ max_messages: null  # Limit the number of media items to download (integer)
 
 ## Execution
 ```sh
-$ python3 media_downloader.py
+python3 media_downloader.py
 ```
 
 ### Download Directories
