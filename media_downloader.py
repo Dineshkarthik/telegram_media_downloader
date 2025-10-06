@@ -205,6 +205,7 @@ async def download_media(  # pylint: disable=too-many-locals
     media_types: List[str],
     file_formats: dict,
     download_directory: Optional[str] = None,
+    semaphore: Optional[asyncio.Semaphore] = None,
 ):
     """
     Download media from Telegram.
@@ -228,6 +229,49 @@ async def download_media(  # pylint: disable=too-many-locals
             * video
             * video_note
             * voice
+    file_formats: dict
+        Dictionary containing the list of file_formats
+        to be downloaded for `audio`, `document` & `video`
+        media types.
+    download_directory: Optional[str]
+        Custom directory path for downloads. If None, uses default structure.
+    semaphore: Optional[asyncio.Semaphore]
+        Semaphore to limit concurrent downloads. If None, no limit is applied.
+
+    Returns
+    -------
+    int
+        Current message id.
+    """
+    if semaphore:
+        async with semaphore:
+            return await _download_media_impl(
+                client, message, media_types, file_formats, download_directory
+            )
+    else:
+        return await _download_media_impl(
+            client, message, media_types, file_formats, download_directory
+        )
+
+
+async def _download_media_impl(  # pylint: disable=too-many-locals
+    client: TelegramClient,
+    message: Message,
+    media_types: List[str],
+    file_formats: dict,
+    download_directory: Optional[str] = None,
+):
+    """
+    Internal implementation of download_media.
+
+    Parameters
+    ----------
+    client: TelegramClient
+        Client to interact with Telegram APIs.
+    message: Message
+        Message object retrieved from telegram.
+    media_types: list
+        List of strings of media types to be downloaded.
     file_formats: dict
         Dictionary containing the list of file_formats
         to be downloaded for `audio`, `document` & `video`
@@ -339,6 +383,7 @@ async def process_messages(
     media_types: List[str],
     file_formats: dict,
     download_directory: Optional[str] = None,
+    max_concurrent_downloads: int = 5,
 ) -> int:
     """
     Download media from Telegram.
@@ -365,16 +410,19 @@ async def process_messages(
         media types.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
+    max_concurrent_downloads: int
+        Maximum number of concurrent downloads. Default is 5.
 
     Returns
     -------
     int
         Max value of list of message ids.
     """
+    semaphore = asyncio.Semaphore(max_concurrent_downloads)
     message_ids = await asyncio.gather(
         *[
             download_media(
-                client, message, media_types, file_formats, download_directory
+                client, message, media_types, file_formats, download_directory, semaphore
             )
             for message in messages
         ]
@@ -472,6 +520,14 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
         logger.info("Download directory: Default")
+    max_concurrent_downloads_val = config.get("max_concurrent_downloads")
+    if isinstance(max_concurrent_downloads_val, int) and max_concurrent_downloads_val > 0:
+        max_concurrent_downloads = max_concurrent_downloads_val
+    elif isinstance(max_concurrent_downloads_val, str) and max_concurrent_downloads_val.strip():
+        max_concurrent_downloads = int(max_concurrent_downloads_val)
+    else:
+        max_concurrent_downloads = 5  # Default value
+    logger.info("Max concurrent downloads: %s", max_concurrent_downloads)
     messages_iter = client.iter_messages(
         config["chat_id"], min_id=last_read_message_id + 1, reverse=True
     )
@@ -501,6 +557,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
                 config["media_types"],
                 config["file_formats"],
                 download_directory,
+                max_concurrent_downloads,
             )
             if max_messages and len(DOWNLOADED_IDS) >= max_messages:
                 break
@@ -516,6 +573,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
             config["media_types"],
             config["file_formats"],
             download_directory,
+            max_concurrent_downloads,
         )
 
     await client.disconnect()
