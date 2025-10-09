@@ -422,7 +422,12 @@ async def process_messages(
     message_ids = await asyncio.gather(
         *[
             download_media(
-                client, message, media_types, file_formats, download_directory, semaphore
+                client,
+                message,
+                media_types,
+                file_formats,
+                download_directory,
+                semaphore,
             )
             for message in messages
         ]
@@ -521,9 +526,15 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
         download_directory = None
         logger.info("Download directory: Default")
     max_concurrent_downloads_val = config.get("max_concurrent_downloads")
-    if isinstance(max_concurrent_downloads_val, int) and max_concurrent_downloads_val > 0:
+    if (
+        isinstance(max_concurrent_downloads_val, int)
+        and max_concurrent_downloads_val > 0
+    ):
         max_concurrent_downloads = max_concurrent_downloads_val
-    elif isinstance(max_concurrent_downloads_val, str) and max_concurrent_downloads_val.strip():
+    elif (
+        isinstance(max_concurrent_downloads_val, str)
+        and max_concurrent_downloads_val.strip()
+    ):
         max_concurrent_downloads = int(max_concurrent_downloads_val)
     else:
         max_concurrent_downloads = 5  # Default value
