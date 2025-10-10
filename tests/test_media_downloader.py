@@ -1235,6 +1235,307 @@ class MediaDownloaderTestCase(unittest.TestCase):
         captured_callback(50, 100)
         mock_pbar.update.assert_called_with(50)
 
+    def test_download_media_with_semaphore(self):
+        """Test that semaphore limits concurrent downloads."""
+        import asyncio
+
+        # Track concurrent downloads
+        concurrent_downloads = []
+        max_concurrent = 0
+
+        async def mock_download_with_tracking(*args, **kwargs):
+            """Mock download that tracks concurrent execution."""
+            concurrent_downloads.append(1)
+            nonlocal max_concurrent
+            max_concurrent = max(max_concurrent, len(concurrent_downloads))
+            await asyncio.sleep(0.01)  # Simulate download time
+            concurrent_downloads.pop()
+            return "downloaded"
+
+        # Create mock client with tracking
+        mock_client = MockClient()
+        mock_client.download_media = mock_download_with_tracking
+
+        # Create test messages
+        messages = [
+            MockMessage(
+                id=i,
+                media=True,
+                video=MockVideo(
+                    file_name=f"video_{i}.mp4",
+                    mime_type="video/mp4",
+                    size=1024,
+                ),
+            )
+            for i in range(100, 110)  # 10 messages
+        ]
+
+        # Test with semaphore limit of 3
+        async def test_with_semaphore():
+            semaphore = asyncio.Semaphore(3)
+            await asyncio.gather(
+                *[
+                    download_media(
+                        mock_client,
+                        msg,
+                        ["video"],
+                        {"video": ["all"]},
+                        None,
+                        semaphore,
+                    )
+                    for msg in messages
+                ]
+            )
+
+        self.loop.run_until_complete(test_with_semaphore())
+
+        # Verify that max concurrent downloads never exceeded the semaphore limit
+        self.assertLessEqual(max_concurrent, 3)
+        self.assertGreater(max_concurrent, 0)  # At least some concurrency happened
+
+    def test_download_media_without_semaphore(self):
+        """Test that downloads work without semaphore (backward compatibility)."""
+        mock_client = MockClient()
+
+        message = MockMessage(
+            id=200,
+            media=True,
+            video=MockVideo(
+                file_name="no_semaphore.mp4",
+                mime_type="video/mp4",
+                size=1024,
+            ),
+        )
+
+        # Test without semaphore (None)
+        result = self.loop.run_until_complete(
+            download_media(
+                mock_client, message, ["video"], {"video": ["all"]}, None, None
+            )
+        )
+
+        self.assertEqual(result, 200)
+
+    def test_process_messages_with_max_concurrent_downloads(self):
+        """Test that process_messages respects max_concurrent_downloads parameter."""
+        import asyncio
+
+        # Track concurrent downloads
+        concurrent_count = []
+        max_concurrent = 0
+
+        async def mock_download_tracking(*args, **kwargs):
+            """Mock download that tracks concurrent execution."""
+            concurrent_count.append(1)
+            nonlocal max_concurrent
+            max_concurrent = max(max_concurrent, len(concurrent_count))
+            await asyncio.sleep(0.01)
+            concurrent_count.pop()
+            return "downloaded"
+
+        mock_client = MockClient()
+        mock_client.download_media = mock_download_tracking
+
+        messages = [
+            MockMessage(
+                id=i,
+                media=True,
+                video=MockVideo(
+                    file_name=f"video_{i}.mp4",
+                    mime_type="video/mp4",
+                    size=1024,
+                ),
+            )
+            for i in range(300, 315)  # 15 messages
+        ]
+
+        # Test with max_concurrent_downloads = 2
+        result = self.loop.run_until_complete(
+            process_messages(
+                mock_client,
+                messages,
+                ["video"],
+                {"video": ["all"]},
+                None,
+                2,  # max_concurrent_downloads
+            )
+        )
+
+        # Verify the result and concurrency limit
+        self.assertEqual(result, 314)  # Last message id
+        self.assertLessEqual(max_concurrent, 2)
+        self.assertGreater(max_concurrent, 0)
+
+    def test_process_messages_default_max_concurrent(self):
+        """Test that process_messages uses default max_concurrent_downloads of 5."""
+        mock_client = MockClient()
+
+        messages = [
+            MockMessage(
+                id=i,
+                media=True,
+                video=MockVideo(
+                    file_name=f"video_{i}.mp4",
+                    mime_type="video/mp4",
+                    size=1024,
+                ),
+            )
+            for i in range(400, 405)
+        ]
+
+        # Call without specifying max_concurrent_downloads (should default to 5)
+        result = self.loop.run_until_complete(
+            process_messages(
+                mock_client,
+                messages,
+                ["video"],
+                {"video": ["all"]},
+                None,
+                # max_concurrent_downloads defaults to 5
+            )
+        )
+
+        self.assertEqual(result, 404)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_concurrent_downloads_int(self, mock_update_config):
+        """Test begin_import with max_concurrent_downloads as integer."""
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_concurrent_downloads"] = 3
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_concurrent_downloads_string(
+        self, mock_update_config
+    ):
+        """Test begin_import with max_concurrent_downloads as string."""
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_concurrent_downloads"] = "7"
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_concurrent_downloads_default(
+        self, mock_update_config
+    ):
+        """Test begin_import defaults to 5 when max_concurrent_downloads not provided."""
+        conf = copy.deepcopy(MOCK_CONF)
+        # Don't set max_concurrent_downloads
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+    @mock.patch("media_downloader.update_config")
+    @mock.patch("media_downloader.TelegramClient", new=MockClient)
+    @mock.patch("media_downloader.process_messages", new=mock_process_message)
+    def test_begin_import_with_max_concurrent_downloads_invalid(
+        self, mock_update_config
+    ):
+        """Test begin_import handles invalid max_concurrent_downloads values."""
+        # Test with 0 (invalid, should default to 5)
+        conf = copy.deepcopy(MOCK_CONF)
+        conf["max_concurrent_downloads"] = 0  # Invalid (should be > 0)
+        result = self.loop.run_until_complete(async_begin_import(conf, 3))
+        expected_conf = copy.deepcopy(conf)
+        expected_conf["last_read_message_id"] = 5
+        self.assertDictEqual(result, expected_conf)
+
+        # Test with negative value (should default to 5)
+        conf2 = copy.deepcopy(MOCK_CONF)
+        conf2["max_concurrent_downloads"] = -1
+        result2 = self.loop.run_until_complete(async_begin_import(conf2, 3))
+        expected_conf2 = copy.deepcopy(conf2)
+        expected_conf2["last_read_message_id"] = 5
+        self.assertDictEqual(result2, expected_conf2)
+
+        # Test with empty string (should default to 5)
+        conf3 = copy.deepcopy(MOCK_CONF)
+        conf3["max_concurrent_downloads"] = ""
+        result3 = self.loop.run_until_complete(async_begin_import(conf3, 3))
+        expected_conf3 = copy.deepcopy(conf3)
+        expected_conf3["last_read_message_id"] = 5
+        self.assertDictEqual(result3, expected_conf3)
+
+    def test_semaphore_with_multiple_batches(self):
+        """Test that semaphore works correctly across multiple process_messages calls."""
+        import asyncio
+
+        concurrent_count = []
+        max_concurrent = 0
+
+        async def mock_download_tracking(*args, **kwargs):
+            concurrent_count.append(1)
+            nonlocal max_concurrent
+            max_concurrent = max(max_concurrent, len(concurrent_count))
+            await asyncio.sleep(0.01)
+            concurrent_count.pop()
+            return "downloaded"
+
+        mock_client = MockClient()
+        mock_client.download_media = mock_download_tracking
+
+        async def test_multiple_batches():
+            nonlocal max_concurrent
+            # Process first batch
+            batch1 = [
+                MockMessage(
+                    id=i,
+                    media=True,
+                    video=MockVideo(
+                        file_name=f"video_{i}.mp4",
+                        mime_type="video/mp4",
+                        size=1024,
+                    ),
+                )
+                for i in range(500, 505)
+            ]
+            await process_messages(
+                mock_client, batch1, ["video"], {"video": ["all"]}, None, 2
+            )
+
+            max_after_batch1 = max_concurrent
+            max_concurrent = 0
+            concurrent_count.clear()
+
+            # Process second batch
+            batch2 = [
+                MockMessage(
+                    id=i,
+                    media=True,
+                    video=MockVideo(
+                        file_name=f"video_{i}.mp4",
+                        mime_type="video/mp4",
+                        size=1024,
+                    ),
+                )
+                for i in range(505, 510)
+            ]
+            await process_messages(
+                mock_client, batch2, ["video"], {"video": ["all"]}, None, 3
+            )
+
+            max_after_batch2 = max_concurrent
+
+            return max_after_batch1, max_after_batch2
+
+        max1, max2 = self.loop.run_until_complete(test_multiple_batches())
+
+        # Verify each batch respected its own limit
+        self.assertLessEqual(max1, 2)
+        self.assertLessEqual(max2, 3)
+
     @classmethod
     def tearDownClass(cls):
         cls.loop.close()
