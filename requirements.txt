@@ -1,4 +1,4 @@
 PyYAML>=6.0.2
-rich==14.1.0
+rich==14.2.0
 telethon>=1.38.0
 tqdm>=4.64.0
