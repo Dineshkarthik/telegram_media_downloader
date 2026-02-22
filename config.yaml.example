@@ -1,8 +1,36 @@
 api_hash: your_api_hash
 api_id: your_api_id
+
+# The downloader can process multiple chats (either sequentially or in parallel).
+# The 'chats' list is highly customizable per chat. If an option is not provided
+# in a chat dictionary, it will fall back to the global option defined above.
+parallel_chats: false
+
+chats:
+  - chat_id: telegram_chat_id
+    last_read_message_id: 0
+    ids_to_retry: []
+    # (Optional) You can override global settings per-chat:
+    # download_directory: /custom/path/for/this/chat
+    # media_types:
+    # - photo
+    # - video
+    # file_formats:
+    #   video:
+    #   - mp4
+    # start_date: 2025-01-01T00:00:00+00:00
+    # end_date: 2025-12-31T23:59:59+00:00
+    # max_messages: 100
+  # - chat_id: another_telegram_chat_id
+  #   last_read_message_id: 0
+  #   ids_to_retry: []
+  
+# GLOBAL SETTINGS (These act as fallbacks for the chats defined above)
+# For backwards compatibility, a single chat_id here still works.
 chat_id: telegram_chat_id
 last_read_message_id: 0
 ids_to_retry: []
+
 media_types:
 - audio
 - photo

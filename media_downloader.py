@@ -35,8 +35,8 @@ logging.getLogger("telethon.network").addFilter(LogFilter())
 logger = logging.getLogger("media_downloader")
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-FAILED_IDS: list = []
-DOWNLOADED_IDS: list = []
+FAILED_IDS: dict = {}
+DOWNLOADED_IDS: dict = {}
 
 
 def update_config(config: dict):
@@ -48,11 +48,28 @@ def update_config(config: dict):
     config: dict
         Configuration to be written into config file.
     """
-    config["ids_to_retry"] = (
-        list(set(config["ids_to_retry"]) - set(DOWNLOADED_IDS)) + FAILED_IDS
-    )
+    chats_config = config.get("chats", [])
+    if chats_config:
+        for chat_conf in chats_config:
+            chat_id = chat_conf.get("chat_id")
+            if chat_id and chat_id in DOWNLOADED_IDS and chat_id in FAILED_IDS:
+                chat_conf["ids_to_retry"] = (
+                    list(
+                        set(chat_conf.get("ids_to_retry", []))
+                        - set(DOWNLOADED_IDS[chat_id])
+                    )
+                    + FAILED_IDS[chat_id]
+                )
+    else:
+        chat_id = config.get("chat_id")
+        if chat_id and chat_id in DOWNLOADED_IDS and chat_id in FAILED_IDS:
+            config["ids_to_retry"] = (
+                list(set(config.get("ids_to_retry", [])) - set(DOWNLOADED_IDS[chat_id]))
+                + FAILED_IDS[chat_id]
+            )
+
     with open("config.yaml", "w") as yaml_file:
-        yaml.dump(config, yaml_file, default_flow_style=False)
+        yaml.dump(config, yaml_file, sort_keys=False, default_flow_style=False)
     logger.info("Updated last read message_id to config file")
 
 
@@ -122,6 +139,7 @@ def _progress_callback(current: int, total: int, pbar: tqdm) -> None:
 async def _get_media_meta(
     media_obj: Union[Document, Photo],
     _type: str,
+    chat_id: Union[int, str],
     download_directory: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
     """Extract file name and file id from media object.
@@ -132,6 +150,8 @@ async def _get_media_meta(
         Media object to be extracted.
     _type: str
         Type of media object.
+    chat_id: Union[int, str]
+        ID of the chat, used for folder structuring.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
 
@@ -147,7 +167,10 @@ async def _get_media_meta(
         file_format = "jpg"
 
     # Determine base directory for downloads
-    base_dir = download_directory if download_directory else THIS_DIR
+    if download_directory:
+        base_dir = download_directory
+    else:
+        base_dir = os.path.join(THIS_DIR, str(chat_id))
 
     if _type in ["voice", "video_note"]:
         file_name: str = os.path.join(
@@ -204,6 +227,7 @@ async def download_media(  # pylint: disable=too-many-locals
     message: Message,
     media_types: List[str],
     file_formats: dict,
+    chat_id: Union[int, str],
     download_directory: Optional[str] = None,
 ):
     """
@@ -221,17 +245,11 @@ async def download_media(  # pylint: disable=too-many-locals
     media_types: list
         List of strings of media types to be downloaded.
         Ex : ["audio", "photo"]
-        Supported formats:
-            * audio
-            * document
-            * photo
-            * video
-            * video_note
-            * voice
     file_formats: dict
         Dictionary containing the list of file_formats
-        to be downloaded for `audio`, `document` & `video`
-        media types.
+        to be downloaded.
+    chat_id: Union[int, str]
+        ID of the chat being processed.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
 
@@ -241,6 +259,10 @@ async def download_media(  # pylint: disable=too-many-locals
         Current message id.
     """
     for retry in range(3):
+        if chat_id not in FAILED_IDS:
+            FAILED_IDS[chat_id] = []
+        if chat_id not in DOWNLOADED_IDS:
+            DOWNLOADED_IDS[chat_id] = []
         try:
             _type = get_media_type(message)
             logger.debug("Processing message %s of type %s", message.id, _type)
@@ -250,12 +272,10 @@ async def download_media(  # pylint: disable=too-many-locals
             if not media_obj:
                 return message.id
             file_name, file_format = await _get_media_meta(
-                media_obj, _type, download_directory
+                media_obj, _type, chat_id, download_directory
             )
             if _can_download(_type, file_formats, file_format):
-                # Create progress bar for download
                 file_size = getattr(media_obj, "size", 0)
-                # Use original file name if available, otherwise generated name
                 display_name = getattr(
                     media_obj, "file_name", os.path.basename(file_name)
                 )
@@ -267,7 +287,6 @@ async def download_media(  # pylint: disable=too-many-locals
                     with tqdm(
                         total=file_size, unit="B", unit_scale=True, desc=desc
                     ) as pbar:
-                        # pylint: disable=cell-var-from-loop
                         download_path = await client.download_media(
                             message,
                             file=file_name,
@@ -282,7 +301,6 @@ async def download_media(  # pylint: disable=too-many-locals
                     with tqdm(
                         total=file_size, unit="B", unit_scale=True, desc=desc
                     ) as pbar:
-                        # pylint: disable=cell-var-from-loop
                         download_path = await client.download_media(
                             message,
                             file=file_name,
@@ -293,7 +311,7 @@ async def download_media(  # pylint: disable=too-many-locals
                 if download_path:
                     logger.info("Media downloaded - %s", download_path)
                     logger.debug("Successfully downloaded message %s", message.id)
-                DOWNLOADED_IDS.append(message.id)
+                DOWNLOADED_IDS[chat_id].append(message.id)
             break
         except FileReferenceExpiredError:
             logger.warning(
@@ -306,7 +324,7 @@ async def download_media(  # pylint: disable=too-many-locals
                     "Message[%d]: file reference expired, skipping download.",
                     message.id,
                 )
-                FAILED_IDS.append(message.id)
+                FAILED_IDS[chat_id].append(message.id)
         except TimeoutError:
             logger.warning(
                 "Timeout Error occurred when downloading Message[%d], "
@@ -319,7 +337,7 @@ async def download_media(  # pylint: disable=too-many-locals
                     "Message[%d]: Timing out after 3 retries, download skipped.",
                     message.id,
                 )
-                FAILED_IDS.append(message.id)
+                FAILED_IDS[chat_id].append(message.id)
         except Exception as e:
             logger.error(
                 "Message[%d]: could not be downloaded due to following "
@@ -328,7 +346,7 @@ async def download_media(  # pylint: disable=too-many-locals
                 e,
                 exc_info=True,
             )
-            FAILED_IDS.append(message.id)
+            FAILED_IDS[chat_id].append(message.id)
             break
     return message.id
 
@@ -338,6 +356,7 @@ async def process_messages(
     messages: List[Message],
     media_types: List[str],
     file_formats: dict,
+    chat_id: Union[int, str],
     download_directory: Optional[str] = None,
 ) -> int:
     """
@@ -351,18 +370,11 @@ async def process_messages(
         List of telegram messages.
     media_types: list
         List of strings of media types to be downloaded.
-        Ex : `["audio", "photo"]`
-        Supported formats:
-            * audio
-            * document
-            * photo
-            * video
-            * video_note
-            * voice
     file_formats: dict
         Dictionary containing the list of file_formats
-        to be downloaded for `audio`, `document` & `video`
-        media types.
+        to be downloaded.
+    chat_id: Union[int, str]
+        ID of the chat.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
 
@@ -374,14 +386,139 @@ async def process_messages(
     message_ids = await asyncio.gather(
         *[
             download_media(
-                client, message, media_types, file_formats, download_directory
+                client, message, media_types, file_formats, chat_id, download_directory
             )
             for message in messages
         ]
     )
-    logger.info("Processed batch of %d messages", len(messages))
+    logger.info("Processed batch of %d messages for chat %s", len(messages), chat_id)
     last_message_id: int = max(message_ids)
     return last_message_id
+
+
+async def process_chat(
+    client: TelegramClient,
+    global_config: dict,
+    chat_conf: dict,
+    pagination_limit: int,
+):
+    """
+    Process a single chat's media downloads.
+    """
+    chat_id = chat_conf["chat_id"]
+    logger.info("Starting processing for chat_id: %s", chat_id)
+
+    # Initialize state maps for this chat
+    if chat_id not in FAILED_IDS:
+        FAILED_IDS[chat_id] = []
+    if chat_id not in DOWNLOADED_IDS:
+        DOWNLOADED_IDS[chat_id] = []
+
+    # Merge chat-specific config with global fallback
+    media_types = chat_conf.get("media_types", global_config.get("media_types"))
+    file_formats = chat_conf.get("file_formats", global_config.get("file_formats"))
+    last_read_message_id = chat_conf.get(
+        "last_read_message_id", global_config.get("last_read_message_id", 0)
+    )
+
+    start_date_val = chat_conf.get("start_date", global_config.get("start_date"))
+    if isinstance(start_date_val, str) and start_date_val.strip():
+        start_date = datetime.fromisoformat(start_date_val)
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+    elif isinstance(start_date_val, date):
+        start_date = datetime.combine(
+            start_date_val, datetime.min.time(), tzinfo=timezone.utc
+        )
+    else:
+        start_date = None
+
+    end_date_val = chat_conf.get("end_date", global_config.get("end_date"))
+    if isinstance(end_date_val, str) and end_date_val.strip():
+        end_date = datetime.fromisoformat(end_date_val)
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+    elif isinstance(end_date_val, date):
+        end_date = datetime.combine(
+            end_date_val, datetime.min.time(), tzinfo=timezone.utc
+        )
+    else:
+        end_date = None
+
+    max_messages_val = chat_conf.get("max_messages", global_config.get("max_messages"))
+    if isinstance(max_messages_val, int):
+        max_messages = max_messages_val
+    elif isinstance(max_messages_val, str) and max_messages_val.strip():
+        max_messages = int(max_messages_val)
+    else:
+        max_messages = None
+
+    download_directory_val = chat_conf.get(
+        "download_directory", global_config.get("download_directory")
+    )
+    if isinstance(download_directory_val, str) and download_directory_val.strip():
+        download_directory = download_directory_val.strip()
+        if not os.path.isabs(download_directory):
+            download_directory = os.path.abspath(download_directory)
+        os.makedirs(download_directory, exist_ok=True)
+    else:
+        download_directory = None
+
+    messages_iter = client.iter_messages(
+        chat_id, min_id=last_read_message_id, reverse=True
+    )
+    messages_list: list = []
+    pagination_count: int = 0
+    ids_to_retry = chat_conf.get("ids_to_retry", global_config.get("ids_to_retry", []))
+
+    if ids_to_retry:
+        logger.info("Downloading files failed during last run for chat %s...", chat_id)
+        skipped_messages: list = await client.get_messages(  # type: ignore
+            chat_id, ids=ids_to_retry
+        )
+        for message in skipped_messages:
+            pagination_count += 1
+            messages_list.append(message)
+
+    async for message in messages_iter:  # type: ignore
+        if end_date and message.date > end_date:
+            continue
+        if start_date and message.date < start_date:
+            break
+        if pagination_count != pagination_limit:
+            pagination_count += 1
+            messages_list.append(message)
+        else:
+            last_read_message_id = await process_messages(
+                client,
+                messages_list,
+                media_types,
+                file_formats,
+                chat_id,
+                download_directory,
+            )
+            if max_messages and len(DOWNLOADED_IDS[chat_id]) >= max_messages:
+                break
+            pagination_count = 0
+            messages_list = []
+            messages_list.append(message)
+            chat_conf["last_read_message_id"] = last_read_message_id
+
+            # Since update_config parses config directly, we must update the global config correctly.
+            # `chat_conf` is a reference to an element in `config["chats"]` or `config` itself.
+            # We don't call update_config here when running parallel to avoid race conditions on file write.
+
+    if messages_list:
+        last_read_message_id = await process_messages(
+            client,
+            messages_list,
+            media_types,
+            file_formats,
+            chat_id,
+            download_directory,
+        )
+
+    chat_conf["last_read_message_id"] = last_read_message_id
 
 
 async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -389,10 +526,6 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
 ) -> dict:
     """
     Create telethon client and initiate download.
-
-    The telethon client is created using the ``api_id``, ``api_hash``
-    from the config and iter through message offset on the
-    ``last_message_id`` and the requested file_formats.
 
     Parameters
     ----------
@@ -427,99 +560,48 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
         lang_code=LANG_CODE,
     )
     await client.start()
-    last_read_message_id: int = config["last_read_message_id"]
-    start_date_val = config.get("start_date")
-    if isinstance(start_date_val, str) and start_date_val.strip():
-        start_date = datetime.fromisoformat(start_date_val)
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-    elif isinstance(start_date_val, date):
-        start_date = datetime.combine(
-            start_date_val, datetime.min.time(), tzinfo=timezone.utc
-        )
-    else:
-        start_date = None
-    logger.info("Start date filter: %s", start_date or "None")
-    end_date_val = config.get("end_date")
-    if isinstance(end_date_val, str) and end_date_val.strip():
-        end_date = datetime.fromisoformat(end_date_val)
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-    elif isinstance(end_date_val, date):
-        end_date = datetime.combine(
-            end_date_val, datetime.min.time(), tzinfo=timezone.utc
-        )
-    else:
-        end_date = None
-    logger.info("End date filter: %s", end_date or "None")
-    max_messages_val = config.get("max_messages")
-    if isinstance(max_messages_val, int):
-        max_messages = max_messages_val
-    elif isinstance(max_messages_val, str) and max_messages_val.strip():
-        max_messages = int(max_messages_val)
-    else:
-        max_messages = None
-    logger.info("Max messages to download: %s", max_messages or "Unlimited")
-    download_directory_val = config.get("download_directory")
-    if isinstance(download_directory_val, str) and download_directory_val.strip():
-        download_directory = download_directory_val.strip()
-        # Convert to absolute path if relative
-        if not os.path.isabs(download_directory):
-            download_directory = os.path.abspath(download_directory)
-        # Create directory if it doesn't exist
-        os.makedirs(download_directory, exist_ok=True)
-        logger.info("Custom download directory: %s", download_directory)
-    else:
-        download_directory = None
-        logger.info("Download directory: Default")
-    messages_iter = client.iter_messages(
-        config["chat_id"], min_id=last_read_message_id, reverse=True
-    )
-    messages_list: list = []
-    pagination_count: int = 0
-    if config["ids_to_retry"]:
-        logger.info("Downloading files failed during last run...")
-        skipped_messages: list = await client.get_messages(  # type: ignore
-            config["chat_id"], ids=config["ids_to_retry"]
-        )
-        for message in skipped_messages:
-            pagination_count += 1
-            messages_list.append(message)
 
-    async for message in messages_iter:  # type: ignore
-        if end_date and message.date > end_date:
-            continue
-        if start_date and message.date < start_date:
-            break
-        if pagination_count != pagination_limit:
-            pagination_count += 1
-            messages_list.append(message)
-        else:
-            last_read_message_id = await process_messages(
-                client,
-                messages_list,
-                config["media_types"],
-                config["file_formats"],
-                download_directory,
+    # Extract chats format configuration
+    chats_config = config.get("chats", [])
+    if not chats_config:
+        # Backward compatibility for legacy config format
+        logger.info("Using legacy single-chat configuration format.")
+        if "chat_id" not in config:
+            raise KeyError(
+                "chat_id must be specified either in a chats list or globally."
             )
-            if max_messages and len(DOWNLOADED_IDS) >= max_messages:
-                break
-            pagination_count = 0
-            messages_list = []
-            messages_list.append(message)
-            config["last_read_message_id"] = last_read_message_id
-            update_config(config)
-    if messages_list:
-        last_read_message_id = await process_messages(
-            client,
-            messages_list,
-            config["media_types"],
-            config["file_formats"],
-            download_directory,
-        )
+
+        # create one dummy chat object to iterate
+        chat_dict = {
+            "chat_id": config["chat_id"],
+            "last_read_message_id": config.get("last_read_message_id", 0),
+            "ids_to_retry": config.get("ids_to_retry", []),
+        }
+        # In legacy mode, processing directly on the global config might be safer, but
+        # using the process_chat flow is strictly better for logic reuse.
+        # We'll pass the dummy chat dict, but later sync it.
+        chats_to_process = [chat_dict]
+    else:
+        chats_to_process = chats_config
+
+    parallel_chats = config.get("parallel_chats", False)
+
+    if parallel_chats:
+        logger.info("Processing chats in parallel...")
+        tasks = []
+        for chat_conf in chats_to_process:
+            tasks.append(process_chat(client, config, chat_conf, pagination_limit))
+        await asyncio.gather(*tasks)
+    else:
+        logger.info("Processing chats sequentially...")
+        for chat_conf in chats_to_process:
+            await process_chat(client, config, chat_conf, pagination_limit)
+
+    if not chats_config:
+        # sync legacy back
+        config["last_read_message_id"] = chats_to_process[0]["last_read_message_id"]
 
     await client.disconnect()
-    config["last_read_message_id"] = last_read_message_id
     return config
 
 
@@ -530,12 +612,14 @@ def main():
     updated_config = asyncio.get_event_loop().run_until_complete(
         begin_import(config, pagination_limit=100)
     )
-    if FAILED_IDS:
+
+    total_failures = sum(len(set(fail_list)) for fail_list in FAILED_IDS.values())
+    if total_failures > 0:
         logger.info(
             "Downloading of %d files failed. "
             "Failed message ids are added to config file.\n"
             "These files will be downloaded on the next run.",
-            len(set(FAILED_IDS)),
+            total_failures,
         )
     update_config(updated_config)
     check_for_updates()
