@@ -615,9 +615,17 @@ def main():
     """Main function of the downloader."""
     with open(os.path.join(THIS_DIR, "config.yaml")) as f:
         config = yaml.safe_load(f)
-    updated_config = asyncio.get_event_loop().run_until_complete(
-        begin_import(config, pagination_limit=100)
-    )
+
+    updated_config = config
+    try:
+        updated_config = asyncio.get_event_loop().run_until_complete(
+            begin_import(config, pagination_limit=100)
+        )
+    except KeyboardInterrupt:
+        logger.warning(
+            "KeyboardInterrupt received. Gentle exit triggered! "
+            "Saving the last read message IDs and exiting..."
+        )
 
     total_failures = sum(len(set(fail_list)) for fail_list in FAILED_IDS.values())
     if total_failures > 0:

@@ -1205,6 +1205,34 @@ class MediaDownloaderTestCase(unittest.TestCase):
         expected_conf["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(expected_conf)
 
+    @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    @mock.patch("media_downloader.begin_import")
+    @mock.patch("media_downloader.asyncio", new=MockAsync())
+    def test_main_with_keyboard_interrupt(self, mock_import, mock_update, mock_yaml):
+        """Test main function when KeyboardInterrupt is raised."""
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [],
+            "chat_id": 8654123,
+        }
+        mock_yaml.return_value = conf
+        mock_import.side_effect = KeyboardInterrupt()
+
+        main()
+
+        mock_import.assert_called_with(conf, pagination_limit=100)
+        # Verify update_config is called to save progress even on interrupt
+
+        # main() contains logic that mutates the config before saving if there are FAILED_IDS.
+        # It copies FAILED_IDS[8654123] into ids_to_retry.
+        # So even on exception, the mock update_config is called with [1,2,3] not []
+        expected_conf = conf.copy()
+        expected_conf["ids_to_retry"] = [1, 2, 3]
+        mock_update.assert_called_with(expected_conf)
+
     @mock.patch("media_downloader.print_meta")
     @mock.patch("media_downloader.main")
     def test_main_entry(self, mock_main, mock_print_meta):
