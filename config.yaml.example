@@ -51,3 +51,12 @@ download_directory: null  # Custom directory path for downloads (absolute or rel
 start_date: null
 end_date: null
 max_messages: null
+
+# Anti-ban / rate limiting (optional, can also be set per-chat)
+# Max number of files downloading simultaneously within each batch.
+# Lower values = slower but safer.  1 = fully sequential.  Default: 4
+max_concurrent_downloads: 4
+# Pause between starting each file download.
+# Fixed delay:  download_delay: 2        (always 2 seconds)
+# Random range: download_delay: [1, 5]   (random 1–5 seconds per file)
+download_delay: null
