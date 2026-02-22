@@ -171,7 +171,12 @@ class MockEventLoop:
         pass
 
     def run_until_complete(self, *args, **kwargs):
-        return {"api_id": 1, "api_hash": "asdf", "ids_to_retry": [1, 2, 3]}
+        return {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [1, 2, 3],
+            "chat_id": 8654123,
+        }
 
 
 class MockAsync:
@@ -183,17 +188,21 @@ class MockAsync:
 
 
 async def async_get_media_meta(message_media, _type):
-    result = await _get_media_meta(message_media, _type)
+    result = await _get_media_meta(message_media, _type, chat_id="123")
     return result
 
 
 async def async_get_media_meta_custom_dir(message_media, _type, download_directory):
-    result = await _get_media_meta(message_media, _type, download_directory)
+    result = await _get_media_meta(
+        message_media, _type, chat_id="123", download_directory=download_directory
+    )
     return result
 
 
 async def async_download_media(client, message, media_types, file_formats):
-    result = await download_media(client, message, media_types, file_formats)
+    result = await download_media(
+        client, message, media_types, file_formats, chat_id="123"
+    )
     return result
 
 
@@ -207,7 +216,9 @@ async def mock_process_message(*args, **kwargs):
 
 
 async def async_process_messages(client, messages, media_types, file_formats):
-    result = await process_messages(client, messages, media_types, file_formats)
+    result = await process_messages(
+        client, messages, media_types, file_formats, chat_id="123"
+    )
     return result
 
 
@@ -328,7 +339,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/voice/voice_2019-07-25T14:53:50.ogg"
+                    "/root/project/123/voice/voice_2019-07-25T14:53:50.ogg"
                 ),
                 "ogg",
             ),
@@ -346,7 +357,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/photo/photo_123"),
+                platform_generic_path("/root/project/123/photo/photo_123"),
                 "jpg",
             ),
             result,
@@ -366,7 +377,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/document/sample_document.pdf"),
+                platform_generic_path("/root/project/123/document/sample_document.pdf"),
                 "pdf",
             ),
             result,
@@ -386,7 +397,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/audio/sample_audio.mp3"),
+                platform_generic_path("/root/project/123/audio/sample_audio.mp3"),
                 "mp3",
             ),
             result,
@@ -405,7 +416,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/video/video_123"),
+                platform_generic_path("/root/project/123/video/video_123"),
                 "mp4",
             ),
             result,
@@ -426,7 +437,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/video_note/video_note_2019-07-25T14:53:50.mp4"
+                    "/root/project/123/video_note/video_note_2019-07-25T14:53:50.mp4"
                 ),
                 "mp4",
             ),
@@ -500,10 +511,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
         result = self.loop.run_until_complete(
             async_get_media_meta_custom_dir(message.document, "document", None)
         )
-        # Should use the actual THIS_DIR (project root)
+        # Should use the actual THIS_DIR (project root) + chat_id 123
         expected_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             "..",
+            "123",
             "document",
             "sample_document.pdf",
         )
@@ -717,10 +729,13 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "api_id": 123,
             "api_hash": "hasw5Tgawsuj67",
             "ids_to_retry": [],
+            "chat_id": 8654123,
         }
         update_config(conf)
         mock_open.assert_called_with("config.yaml", "w")
-        mock_yaml.dump.assert_called_with(conf, mock.ANY, default_flow_style=False)
+        mock_yaml.dump.assert_called_with(
+            conf, mock.ANY, sort_keys=False, default_flow_style=False
+        )
 
     def test_get_media_type(self):
         # Test photo
@@ -1053,7 +1068,80 @@ class MediaDownloaderTestCase(unittest.TestCase):
         result2 = _is_exist(this_dir)
         self.assertEqual(result2, False)
 
-    @mock.patch("media_downloader.FAILED_IDS", [2, 3])
+    @mock.patch("media_downloader.TelegramClient", return_value=MockClient())
+    @mock.patch("media_downloader.process_chat")
+    def test_begin_import_multiple_chats(self, mock_process_chat, mock_client):
+        conf = {
+            "api_id": 123,
+            "api_hash": "has",
+            "chats": [
+                {"chat_id": 1, "last_read_message_id": 10},
+                {"chat_id": 2, "last_read_message_id": 20},
+            ],
+            "parallel_chats": False,
+        }
+        result = self.loop.run_until_complete(async_begin_import(conf, 100))
+        self.assertEqual(mock_process_chat.call_count, 2)
+        self.assertEqual(result, conf)
+
+    @mock.patch("media_downloader.TelegramClient", return_value=MockClient())
+    @mock.patch("media_downloader.process_chat")
+    def test_begin_import_parallel_chats(self, mock_process_chat, mock_client):
+        conf = {
+            "api_id": 123,
+            "api_hash": "has",
+            "chats": [{"chat_id": 1}, {"chat_id": 2}],
+            "parallel_chats": True,
+        }
+        result = self.loop.run_until_complete(async_begin_import(conf, 100))
+        self.assertEqual(mock_process_chat.call_count, 2)
+
+    @mock.patch("media_downloader.TelegramClient", return_value=MockClient())
+    def test_begin_import_missing_chat_id(self, mock_client):
+        conf = {"api_id": 123, "api_hash": "has"}
+        with self.assertRaises(KeyError):
+            self.loop.run_until_complete(async_begin_import(conf, 100))
+
+    @mock.patch("media_downloader.process_messages", return_value=1234)
+    def test_process_chat_edge_cases(self, mock_process_messages):
+        client = MockClient()
+        conf = {"api_id": 1, "api_hash": "a"}
+        chat_conf = {"chat_id": 111, "max_messages": 0}
+
+        import media_downloader
+
+        media_downloader.DOWNLOADED_IDS[111] = [123]
+
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1)
+        )
+        self.assertEqual(chat_conf.get("last_read_message_id"), 1234)
+
+        chat_conf = {
+            "chat_id": 222,
+            "start_date": "2050-01-01",
+            "end_date": datetime(2050, 12, 31).date(),
+        }
+        media_downloader.DOWNLOADED_IDS[222] = []
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1)
+        )
+
+    def test_update_config_append_failed_ids(self):
+        conf = {"chats": [{"chat_id": 12345, "ids_to_retry": [10, 20]}]}
+        import media_downloader
+
+        media_downloader.FAILED_IDS[12345] = [20, 30]
+        media_downloader.DOWNLOADED_IDS[12345] = [10]
+        with mock.patch("media_downloader.open", mock.mock_open()), mock.patch(
+            "media_downloader.yaml.dump"
+        ):
+            media_downloader.update_config(conf)
+
+        self.assertIn(30, conf["chats"][0]["ids_to_retry"])
+        self.assertNotIn(10, conf["chats"][0]["ids_to_retry"])
+
+    @mock.patch("media_downloader.FAILED_IDS", {8654123: [2, 3], "123": [], 12345: []})
     @mock.patch("media_downloader.yaml.safe_load")
     @mock.patch("media_downloader.update_config", return_value=True)
     @mock.patch("media_downloader.begin_import")
@@ -1063,6 +1151,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "api_id": 1,
             "api_hash": "asdf",
             "ids_to_retry": [1, 2],
+            "chat_id": 8654123,
         }
         mock_yaml.return_value = conf
         main()
@@ -1070,7 +1159,9 @@ class MediaDownloaderTestCase(unittest.TestCase):
         conf["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(conf)
 
-    @mock.patch("media_downloader.FAILED_IDS", [1, 2, 3])
+    @mock.patch(
+        "media_downloader.FAILED_IDS", {8654123: [1, 2, 3], "123": [], 12345: []}
+    )
     @mock.patch("media_downloader.yaml.safe_load")
     @mock.patch("media_downloader.update_config", return_value=True)
     @mock.patch("media_downloader.begin_import")
@@ -1081,6 +1172,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "api_id": 1,
             "api_hash": "asdf",
             "ids_to_retry": [],
+            "chat_id": 8654123,
         }
         mock_yaml.return_value = conf
         mock_import.return_value = conf
