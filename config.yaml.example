@@ -24,7 +24,7 @@ chats:
   # - chat_id: another_telegram_chat_id
   #   last_read_message_id: 0
   #   ids_to_retry: []
-  
+
 # GLOBAL SETTINGS (These act as fallbacks for the chats defined above)
 # For backwards compatibility, a single chat_id here still works.
 chat_id: telegram_chat_id
