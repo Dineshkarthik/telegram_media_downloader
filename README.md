@@ -29,7 +29,16 @@ A meta of last read/downloaded message is stored in the config file so that in s
 |Download media types|  audio, document, photo, video, video_note, voice|
 
 ### ToDo:
-- Add support for multiple channels/chats.
+- Add GUI/Web interface.
+
+## 🎉 Version 3.2.0 - Multi-Chat & Parallel Processing
+
+### What's New:
+- **Multiple Chats Support**: Configure and download from multiple chats at once using a new `chats` list in `config.yaml`.
+- **Parallel Downloading**: Added `parallel_chats` option to download from multiple chats concurrently using `asyncio.gather`.
+- **Per-Chat Configurations**: Customize `media_types`, `download_directory`, `start_date`, and other filters locally for each specific chat without losing the ability to use global defaults.
+- **Dynamic Directories**: Downloaded media is automatically organized into subdirectories by `chat_id` when relying on the default structure.
+- **State Separation**: Maintains tracking (`last_read_message_id` and retry states) completely separated for each chat.
 
 ## ⚠️ Version 3.0.0 - Breaking Changes
 
@@ -124,6 +133,20 @@ The very first step requires you to obtain a valid Telegram API key (API id/hash
 ```yaml
 api_hash: your_api_hash
 api_id: your_api_id
+
+# The downloader can process multiple chats (either sequentially or in parallel).
+# The 'chats' list is highly customizable per chat. If an option is not provided
+# in a chat dictionary, it will fall back to the global option defined above.
+parallel_chats: false
+chats:
+  - chat_id: telegram_chat_id_1
+    last_read_message_id: 0
+    ids_to_retry: []
+    # Local chat options map exactly as the globals (media_types, file_formats, etc.)
+  - chat_id: telegram_chat_id_2
+    last_read_message_id: 0
+
+# GLOBAL SETTINGS (act as fallback for local chats)
 chat_id: telegram_chat_id
 last_read_message_id: 0
 ids_to_retry: []
@@ -142,7 +165,7 @@ file_formats:
   video:
   - all
 
-# Optional filters
+# Optional filters (Can also be set in individual chats)
 download_directory: null  # Custom directory path for downloads (absolute or relative path)
 start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-01' or '2023-01-01T00:00:00')
 end_date: null    # Filter messages before this date (ISO format)
@@ -151,15 +174,17 @@ max_messages: null  # Limit the number of media items to download (integer)
 
 - api_hash  - The api_hash you got from telegram apps
 - api_id - The api_id you got from telegram apps
-- chat_id -  The id of the chat/channel you want to download media. Which you get from the above-mentioned steps.
-- last_read_message_id - If it is the first time you are going to read the channel let it be `0` or if you have already used this script to download media it will have some numbers which are auto-updated after the scripts successful execution. Don't change it.
-- ids_to_retry - `Leave it as it is.` This is used by the downloader script to keep track of all skipped downloads so that it can be downloaded during the next execution of the script.
-- media_types - Type of media to download, you can update which type of media you want to download it can be one or any of the available types.
-- file_formats - File types to download for supported media types which are `audio`, `document` and `video`. Default format is `all`, downloads all files.
-- download_directory - Optional: Custom directory path where media files will be downloaded. Can be absolute or relative path. If `null`, uses default directory structure. The directory will be created if it doesn't exist.
-- start_date - Optional: Filter messages to download only those sent after this date (ISO format, e.g., '2023-01-01'). Leave as `null` to disable.
-- end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave as `null` to disable.
-- max_messages - Optional: Limit the number of media items to download (integer). Leave as `null` for unlimited.
+- parallel_chats - If `true`, downloads chats inside the `chats` list concurrently.
+- chats: A list of discrete chats/channels to download from. Setting `media_types`, `download_directory`, etc., locally inside here overrides global options.
+- chat_id -  The id of the chat/channel you want to download media for. Can be set globally or locally.
+- last_read_message_id - If it is the first time you are going to read the channel let it be `0` or if you have already used this script it will have auto-updated.
+- ids_to_retry - `Leave it as it is.` This keeps track of all skipped downloads to retry.
+- media_types - Type of media to download.
+- file_formats - File types to download. Default is `all`.
+- download_directory - Optional: Custom directory path where media files will be downloaded. Can be absolute or relative path. If `null`, uses default directory structure.
+- start_date - Optional: Filter messages to download only those sent after this date (ISO format). Leave `null` to disable.
+- end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave `null` to disable.
+- max_messages - Optional: Limit the number of media items to download (integer). Leave `null` for unlimited.
 
 ## Execution
 ```sh
@@ -168,16 +193,16 @@ python3 media_downloader.py
 
 ### Download Directories
 
-By default, all downloaded media will be stored in respective directories named after the media type in the same path as the python script.
+By default, all downloaded media will be stored in respective directories named after the media type and scoped to their specific `chat_id` in the same path as the python script.
 
 | Media type | Default Download directory |
 |--|--|
-| audio | path/to/project/audio |
-| document | path/to/project/document |
-| photo | path/to/project/photo |
-| video | path/to/project/video |
-| voice | path/to/project/voice |
-| voice_note | path/to/project/voice_note |
+| audio | path/to/project/<chat_id>/audio |
+| document | path/to/project/<chat_id>/document |
+| photo | path/to/project/<chat_id>/photo |
+| video | path/to/project/<chat_id>/video |
+| voice | path/to/project/<chat_id>/voice |
+| voice_note | path/to/project/<chat_id>/voice_note |
 
 #### Custom Download Directory
 
