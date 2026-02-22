@@ -473,7 +473,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
         download_directory = None
         logger.info("Download directory: Default")
     messages_iter = client.iter_messages(
-        config["chat_id"], min_id=last_read_message_id + 1, reverse=True
+        config["chat_id"], min_id=last_read_message_id, reverse=True
     )
     messages_list: list = []
     pagination_count: int = 0
