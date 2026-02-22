@@ -1124,20 +1124,25 @@ class MediaDownloaderTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.loop.run_until_complete(async_begin_import(conf, 100))
 
+    @mock.patch("media_downloader.update_config", return_value=None)
     @mock.patch("media_downloader.process_messages", return_value=1234)
-    def test_process_chat_edge_cases(self, mock_process_messages):
+    def test_process_chat_edge_cases(self, mock_process_messages, mock_update_config):
         client = MockClient()
         conf = {"api_id": 1, "api_hash": "a"}
         chat_conf = {"chat_id": 111, "max_messages": 0}
+
+        import asyncio
 
         import media_downloader
 
         media_downloader.DOWNLOADED_IDS[111] = [123]
 
         self.loop.run_until_complete(
-            media_downloader.process_chat(client, conf, chat_conf, 1)
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
         )
         self.assertEqual(chat_conf.get("last_read_message_id"), 1234)
+        # update_config should have been called (checkpoint write)
+        mock_update_config.assert_called()
 
         chat_conf = {
             "chat_id": 222,
@@ -1146,7 +1151,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         }
         media_downloader.DOWNLOADED_IDS[222] = []
         self.loop.run_until_complete(
-            media_downloader.process_chat(client, conf, chat_conf, 1)
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
         )
 
     def test_update_config_append_failed_ids(self):
@@ -1204,6 +1209,59 @@ class MediaDownloaderTestCase(unittest.TestCase):
         expected_conf = conf.copy()
         expected_conf["ids_to_retry"] = [1, 2, 3]
         mock_update.assert_called_with(expected_conf)
+
+    @mock.patch("media_downloader.PROCESSED_IDS", {8654123: [20, 19]})
+    @mock.patch("media_downloader.CURRENT_BATCH_IDS", {8654123: [20, 19, 18, 17]})
+    @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    def test_main_with_keyboard_interrupt(self, mock_update, mock_yaml):
+        """Test main function when KeyboardInterrupt is raised mid-batch."""
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [],
+            "chat_id": 8654123,
+        }
+        mock_yaml.return_value = conf
+
+        mock_loop = mock.Mock()
+        mock_loop.run_until_complete.side_effect = KeyboardInterrupt()
+        with mock.patch(
+            "media_downloader.asyncio.get_event_loop", return_value=mock_loop
+        ):
+            main()
+
+        mock_update.assert_called()
+        # Interrupt handler: PROCESSED_IDS=[20,19], CURRENT_BATCH_IDS=[20,19,18,17]
+        # unprocessed=[18,17], safe_id = min(17,18)-1 = 16
+        self.assertEqual(conf.get("last_read_message_id"), 16)
+
+    @mock.patch("media_downloader.PROCESSED_IDS", {8654123: [20, 19, 18, 17]})
+    @mock.patch("media_downloader.CURRENT_BATCH_IDS", {8654123: [20, 19, 18, 17]})
+    @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    def test_main_with_keyboard_interrupt_full_batch(self, mock_update, mock_yaml):
+        """KeyboardInterrupt when entire batch was already processed."""
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [],
+            "chat_id": 8654123,
+        }
+        mock_yaml.return_value = conf
+
+        mock_loop = mock.Mock()
+        mock_loop.run_until_complete.side_effect = KeyboardInterrupt()
+        with mock.patch(
+            "media_downloader.asyncio.get_event_loop", return_value=mock_loop
+        ):
+            main()
+
+        mock_update.assert_called()
+        # All 4 IDs processed → resume after max(batch_ids) = 20 (not min-1)
+        self.assertEqual(conf.get("last_read_message_id"), 20)
 
     @mock.patch("media_downloader.print_meta")
     @mock.patch("media_downloader.main")

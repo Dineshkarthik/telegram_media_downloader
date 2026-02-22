@@ -38,6 +38,8 @@ logger = logging.getLogger("media_downloader")
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 FAILED_IDS: dict = {}
 DOWNLOADED_IDS: dict = {}
+PROCESSED_IDS: dict = {}
+CURRENT_BATCH_IDS: dict = {}
 
 
 def update_config(config: dict):
@@ -222,7 +224,7 @@ def get_media_type(message: Message) -> Optional[str]:
     return None
 
 
-async def download_media(  # pylint: disable=too-many-locals,too-many-branches,too-many-positional-arguments
+async def download_media(  # pylint: disable=too-many-locals,too-many-branches,too-many-positional-arguments,too-many-statements
     client: TelegramClient,
     message: Message,
     media_types: List[str],
@@ -263,13 +265,17 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
             FAILED_IDS[chat_id] = []
         if chat_id not in DOWNLOADED_IDS:
             DOWNLOADED_IDS[chat_id] = []
+        if chat_id not in PROCESSED_IDS:
+            PROCESSED_IDS[chat_id] = []
         try:
             _type = get_media_type(message)
             logger.debug("Processing message %s of type %s", message.id, _type)
             if not _type or _type not in media_types:
+                PROCESSED_IDS[chat_id].append(message.id)
                 return message.id
             media_obj = message.photo if _type == "photo" else message.document
             if not media_obj:
+                PROCESSED_IDS[chat_id].append(message.id)
                 return message.id
             file_name, file_format = await _get_media_meta(
                 media_obj, _type, chat_id, download_directory
@@ -312,6 +318,8 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
                     logger.info("Media downloaded - %s", download_path)
                     logger.debug("Successfully downloaded message %s", message.id)
                 DOWNLOADED_IDS[chat_id].append(message.id)
+
+            PROCESSED_IDS[chat_id].append(message.id)
             break
         except FileReferenceExpiredError:
             logger.warning(
@@ -401,6 +409,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     global_config: dict,
     chat_conf: dict,
     pagination_limit: int,
+    config_write_lock: asyncio.Lock,
 ):
     """
     Process a single chat's media downloads.
@@ -413,6 +422,10 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
         FAILED_IDS[chat_id] = []
     if chat_id not in DOWNLOADED_IDS:
         DOWNLOADED_IDS[chat_id] = []
+    if chat_id not in PROCESSED_IDS:
+        PROCESSED_IDS[chat_id] = []
+
+    CURRENT_BATCH_IDS[chat_id] = []
 
     # Merge chat-specific config with global fallback
     media_types: List[str] = chat_conf.get(
@@ -493,6 +506,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             pagination_count += 1
             messages_list.append(message)
         else:
+            CURRENT_BATCH_IDS[chat_id] = [m.id for m in messages_list]
             last_read_message_id = await process_messages(
                 client,
                 messages_list,
@@ -501,6 +515,10 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 chat_id,
                 download_directory,
             )
+            # Memory cleanup for next batch
+            CURRENT_BATCH_IDS[chat_id] = []
+            PROCESSED_IDS[chat_id] = []
+
             if max_messages and len(DOWNLOADED_IDS[chat_id]) >= max_messages:
                 break
             pagination_count = 0
@@ -508,13 +526,13 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             messages_list.append(message)
             chat_conf["last_read_message_id"] = last_read_message_id
 
-            # Since update_config parses config directly, we must update
-            # the global config correctly. `chat_conf` is a reference to an
-            # element in `config["chats"]` or `config` itself.
-            # We don't call update_config here when running parallel
-            # to avoid race conditions.
+            # Checkpoint: persist progress to disk after every batch so that
+            # crashes or network failures don't lose progress.
+            async with config_write_lock:
+                update_config(global_config)
 
     if messages_list:
+        CURRENT_BATCH_IDS[chat_id] = [m.id for m in messages_list]
         last_read_message_id = await process_messages(
             client,
             messages_list,
@@ -523,8 +541,13 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             chat_id,
             download_directory,
         )
+        CURRENT_BATCH_IDS[chat_id] = []
+        PROCESSED_IDS[chat_id] = []
 
     chat_conf["last_read_message_id"] = last_read_message_id
+    # Final checkpoint for this chat
+    async with config_write_lock:
+        update_config(global_config)
 
 
 async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
@@ -577,35 +600,28 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
                 "chat_id must be specified either in a chats list or globally."
             )
 
-        # create one dummy chat object to iterate
-        chat_dict = {
-            "chat_id": config["chat_id"],
-            "last_read_message_id": config.get("last_read_message_id", 0),
-            "ids_to_retry": config.get("ids_to_retry", []),
-        }
         # In legacy mode, processing directly on the global config might be safer, but
         # using the process_chat flow is strictly better for logic reuse.
-        # We'll pass the dummy chat dict, but later sync it.
-        chats_to_process = [chat_dict]
+        chats_to_process = [config]
     else:
         chats_to_process = chats_config
 
     parallel_chats = config.get("parallel_chats", False)
+    config_write_lock = asyncio.Lock()
 
     if parallel_chats:
         logger.info("Processing chats in parallel...")
-        tasks = []
-        for chat_conf in chats_to_process:
-            tasks.append(process_chat(client, config, chat_conf, pagination_limit))
+        tasks = [
+            process_chat(client, config, chat_conf, pagination_limit, config_write_lock)
+            for chat_conf in chats_to_process
+        ]
         await asyncio.gather(*tasks)
     else:
         logger.info("Processing chats sequentially...")
         for chat_conf in chats_to_process:
-            await process_chat(client, config, chat_conf, pagination_limit)
-
-    if not chats_config:
-        # sync legacy back
-        config["last_read_message_id"] = chats_to_process[0]["last_read_message_id"]
+            await process_chat(
+                client, config, chat_conf, pagination_limit, config_write_lock
+            )
 
     await client.disconnect()
     return config
@@ -615,9 +631,42 @@ def main():
     """Main function of the downloader."""
     with open(os.path.join(THIS_DIR, "config.yaml")) as f:
         config = yaml.safe_load(f)
-    updated_config = asyncio.get_event_loop().run_until_complete(
-        begin_import(config, pagination_limit=100)
-    )
+
+    updated_config = config
+    try:
+        updated_config = asyncio.get_event_loop().run_until_complete(
+            begin_import(config, pagination_limit=100)
+        )
+    except KeyboardInterrupt:
+        logger.warning(
+            "KeyboardInterrupt received. Gentle exit triggered! "
+            "Saving the last read message IDs and exiting..."
+        )
+
+        # Accurately calculate the safe resumption point for each chat
+        chats_config = updated_config.get("chats", [])
+        if not chats_config:
+            chats_to_process = [updated_config]
+        else:
+            chats_to_process = chats_config
+
+        for chat_conf in chats_to_process:
+            chat_id = chat_conf.get("chat_id")
+            if chat_id and chat_id in CURRENT_BATCH_IDS:
+                batch_ids = CURRENT_BATCH_IDS[chat_id]
+                processed = PROCESSED_IDS.get(chat_id, [])
+                unprocessed = [m_id for m_id in batch_ids if m_id not in processed]
+                if unprocessed:
+                    # Safe ID is just below the lowest unprocessed message.
+                    # IDs between this boundary and min(unprocessed) that were
+                    # already processed will be re-encountered on next run, but
+                    # the file-existence check prevents actual re-downloads.
+                    safe_id = min(unprocessed) - 1
+                    chat_conf["last_read_message_id"] = max(0, safe_id)
+                elif batch_ids:
+                    # All messages in batch were processed: resume after the
+                    # highest message so the next run starts beyond this batch.
+                    chat_conf["last_read_message_id"] = max(batch_ids)
 
     total_failures = sum(len(set(fail_list)) for fail_list in FAILED_IDS.values())
     if total_failures > 0:
