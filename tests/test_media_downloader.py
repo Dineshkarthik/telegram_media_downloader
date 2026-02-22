@@ -1154,6 +1154,29 @@ class MediaDownloaderTestCase(unittest.TestCase):
             media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
         )
 
+    @mock.patch("media_downloader.update_config", return_value=None)
+    @mock.patch("media_downloader.process_messages", return_value=1234)
+    def test_process_chat_stops_at_max_messages(
+        self, mock_process_messages, mock_update_config
+    ):
+        """Test that process_chat breaks mid-batch once max_messages is reached."""
+        import asyncio
+
+        import media_downloader
+
+        client = MockClient()
+        conf = {"api_id": 1, "api_hash": "a"}
+        # max_messages=1, DOWNLOADED_IDS already has 1 entry so the break
+        # fires immediately after the first batch is processed.
+        chat_conf = {"chat_id": 333, "max_messages": 1}
+        media_downloader.DOWNLOADED_IDS[333] = [99]
+        media_downloader.FAILED_IDS[333] = []
+
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
+        )
+        mock_update_config.assert_called()
+
     def test_process_messages_max_concurrent_downloads(self):
         """Test that max_concurrent_downloads semaphore limits parallel execution."""
         import media_downloader
