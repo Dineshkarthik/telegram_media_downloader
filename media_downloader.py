@@ -657,12 +657,16 @@ def main():
                 processed = PROCESSED_IDS.get(chat_id, [])
                 unprocessed = [m_id for m_id in batch_ids if m_id not in processed]
                 if unprocessed:
-                    # Safe ID is just below the lowest unprocessed message
+                    # Safe ID is just below the lowest unprocessed message.
+                    # IDs between this boundary and min(unprocessed) that were
+                    # already processed will be re-encountered on next run, but
+                    # the file-existence check prevents actual re-downloads.
                     safe_id = min(unprocessed) - 1
                     chat_conf["last_read_message_id"] = max(0, safe_id)
                 elif batch_ids:
-                    # If all were processed, the safe ID is the max mathematical boundary
-                    chat_conf["last_read_message_id"] = max(0, min(batch_ids) - 1)
+                    # All messages in batch were processed: resume after the
+                    # highest message so the next run starts beyond this batch.
+                    chat_conf["last_read_message_id"] = max(batch_ids)
 
     total_failures = sum(len(set(fail_list)) for fail_list in FAILED_IDS.values())
     if total_failures > 0:

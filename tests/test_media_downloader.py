@@ -1215,10 +1215,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
     @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
     @mock.patch("media_downloader.yaml.safe_load")
     @mock.patch("media_downloader.update_config", return_value=True)
-    @mock.patch("media_downloader.begin_import")
-    @mock.patch("media_downloader.asyncio", new=MockAsync())
-    def test_main_with_keyboard_interrupt(self, mock_import, mock_update, mock_yaml):
-        """Test main function when KeyboardInterrupt is raised."""
+    def test_main_with_keyboard_interrupt(self, mock_update, mock_yaml):
+        """Test main function when KeyboardInterrupt is raised mid-batch."""
         conf = {
             "api_id": 1,
             "api_hash": "asdf",
@@ -1226,15 +1224,44 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "chat_id": 8654123,
         }
         mock_yaml.return_value = conf
-        mock_import.side_effect = KeyboardInterrupt()
 
-        main()
+        mock_loop = mock.Mock()
+        mock_loop.run_until_complete.side_effect = KeyboardInterrupt()
+        with mock.patch(
+            "media_downloader.asyncio.get_event_loop", return_value=mock_loop
+        ):
+            main()
 
-        mock_import.assert_called_with(conf, pagination_limit=100)
-        # Verify update_config is called to save progress even on interrupt
-        # Note: begin_import is mocked so CURRENT_BATCH_IDS is never populated;
-        # the test verifies the config is saved (update_config called).
         mock_update.assert_called()
+        # Interrupt handler: PROCESSED_IDS=[20,19], CURRENT_BATCH_IDS=[20,19,18,17]
+        # unprocessed=[18,17], safe_id = min(17,18)-1 = 16
+        self.assertEqual(conf.get("last_read_message_id"), 16)
+
+    @mock.patch("media_downloader.PROCESSED_IDS", {8654123: [20, 19, 18, 17]})
+    @mock.patch("media_downloader.CURRENT_BATCH_IDS", {8654123: [20, 19, 18, 17]})
+    @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
+    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("media_downloader.update_config", return_value=True)
+    def test_main_with_keyboard_interrupt_full_batch(self, mock_update, mock_yaml):
+        """KeyboardInterrupt when entire batch was already processed."""
+        conf = {
+            "api_id": 1,
+            "api_hash": "asdf",
+            "ids_to_retry": [],
+            "chat_id": 8654123,
+        }
+        mock_yaml.return_value = conf
+
+        mock_loop = mock.Mock()
+        mock_loop.run_until_complete.side_effect = KeyboardInterrupt()
+        with mock.patch(
+            "media_downloader.asyncio.get_event_loop", return_value=mock_loop
+        ):
+            main()
+
+        mock_update.assert_called()
+        # All 4 IDs processed → resume after max(batch_ids) = 20 (not min-1)
+        self.assertEqual(conf.get("last_read_message_id"), 20)
 
     @mock.patch("media_downloader.print_meta")
     @mock.patch("media_downloader.main")
