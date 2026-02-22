@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 from datetime import date, datetime, timezone
 from typing import List, Optional, Tuple, Union
 
@@ -173,11 +174,7 @@ async def _get_media_meta(
         base_dir = os.path.join(THIS_DIR, str(chat_id))
 
     if _type in ["voice", "video_note"]:
-        file_name: str = os.path.join(
-            base_dir,
-            _type,
-            f"{_type}_{media_obj.date.isoformat()}.{file_format}",
-        )
+        file_name_base = f"{_type}_{media_obj.date.isoformat()}.{file_format}"
     else:
         file_name_base = ""
         if hasattr(media_obj, "attributes"):
@@ -188,7 +185,10 @@ async def _get_media_meta(
         if file_name_base == "":
             if hasattr(media_obj, "id"):
                 file_name_base = f"{_type}_{media_obj.id}"
-        file_name = os.path.join(base_dir, _type, file_name_base)
+
+    # Sanitize the file name to remove invalid Windows characters
+    file_name_base = re.sub(r'[<>:"/\\|?*]', "_", file_name_base)
+    file_name = os.path.join(base_dir, _type, file_name_base)
     return file_name, file_format
 
 

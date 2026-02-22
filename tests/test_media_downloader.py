@@ -339,7 +339,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/123/voice/voice_2019-07-25T14:53:50.ogg"
+                    "/root/project/123/voice/voice_2019-07-25T14_53_50.ogg"
                 ),
                 "ogg",
             ),
@@ -378,6 +378,28 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path("/root/project/123/document/sample_document.pdf"),
+                "pdf",
+            ),
+            result,
+        )
+
+        # Test Documents with invalid Windows filename characters
+        message = MockMessage(
+            id=33,
+            media=True,
+            document=MockDocument(
+                file_name="invalid:file>name<with|pipes?.pdf",
+                mime_type="application/pdf",
+            ),
+        )
+        result = self.loop.run_until_complete(
+            async_get_media_meta(message.document, "document")
+        )
+        self.assertEqual(
+            (
+                platform_generic_path(
+                    "/root/project/123/document/invalid_file_name_with_pipes_.pdf"
+                ),
                 "pdf",
             ),
             result,
@@ -437,7 +459,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/root/project/123/video_note/video_note_2019-07-25T14:53:50.mp4"
+                    "/root/project/123/video_note/video_note_2019-07-25T14_53_50.mp4"
                 ),
                 "mp4",
             ),
@@ -463,7 +485,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
         self.assertEqual(
             (
                 platform_generic_path(
-                    "/custom/downloads/voice/voice_2019-07-25T14:53:50.ogg"
+                    "/custom/downloads/voice/voice_2019-07-25T14_53_50.ogg"
                 ),
                 "ogg",
             ),
