@@ -577,16 +577,9 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
                 "chat_id must be specified either in a chats list or globally."
             )
 
-        # create one dummy chat object to iterate
-        chat_dict = {
-            "chat_id": config["chat_id"],
-            "last_read_message_id": config.get("last_read_message_id", 0),
-            "ids_to_retry": config.get("ids_to_retry", []),
-        }
         # In legacy mode, processing directly on the global config might be safer, but
         # using the process_chat flow is strictly better for logic reuse.
-        # We'll pass the dummy chat dict, but later sync it.
-        chats_to_process = [chat_dict]
+        chats_to_process = [config]
     else:
         chats_to_process = chats_config
 
@@ -602,10 +595,6 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
         logger.info("Processing chats sequentially...")
         for chat_conf in chats_to_process:
             await process_chat(client, config, chat_conf, pagination_limit)
-
-    if not chats_config:
-        # sync legacy back
-        config["last_read_message_id"] = chats_to_process[0]["last_read_message_id"]
 
     await client.disconnect()
     return config
