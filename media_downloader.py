@@ -222,7 +222,7 @@ def get_media_type(message: Message) -> Optional[str]:
     return None
 
 
-async def download_media(  # pylint: disable=too-many-locals
+async def download_media(  # pylint: disable=too-many-locals,too-many-branches,too-many-positional-arguments
     client: TelegramClient,
     message: Message,
     media_types: List[str],
@@ -290,7 +290,7 @@ async def download_media(  # pylint: disable=too-many-locals
                         download_path = await client.download_media(
                             message,
                             file=file_name,
-                            progress_callback=lambda c, t: _progress_callback(
+                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
                                 c, t, pbar
                             ),
                         )
@@ -304,7 +304,7 @@ async def download_media(  # pylint: disable=too-many-locals
                         download_path = await client.download_media(
                             message,
                             file=file_name,
-                            progress_callback=lambda c, t: _progress_callback(
+                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
                                 c, t, pbar
                             ),
                         )
@@ -351,7 +351,7 @@ async def download_media(  # pylint: disable=too-many-locals
     return message.id
 
 
-async def process_messages(
+async def process_messages(  # pylint: disable=too-many-positional-arguments
     client: TelegramClient,
     messages: List[Message],
     media_types: List[str],
@@ -396,7 +396,7 @@ async def process_messages(
     return last_message_id
 
 
-async def process_chat(
+async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
     client: TelegramClient,
     global_config: dict,
     chat_conf: dict,
@@ -415,8 +415,12 @@ async def process_chat(
         DOWNLOADED_IDS[chat_id] = []
 
     # Merge chat-specific config with global fallback
-    media_types = chat_conf.get("media_types", global_config.get("media_types"))
-    file_formats = chat_conf.get("file_formats", global_config.get("file_formats"))
+    media_types: List[str] = chat_conf.get(
+        "media_types", global_config.get("media_types", [])
+    )
+    file_formats: dict = chat_conf.get(
+        "file_formats", global_config.get("file_formats", {})
+    )
     last_read_message_id = chat_conf.get(
         "last_read_message_id", global_config.get("last_read_message_id", 0)
     )
@@ -504,9 +508,11 @@ async def process_chat(
             messages_list.append(message)
             chat_conf["last_read_message_id"] = last_read_message_id
 
-            # Since update_config parses config directly, we must update the global config correctly.
-            # `chat_conf` is a reference to an element in `config["chats"]` or `config` itself.
-            # We don't call update_config here when running parallel to avoid race conditions on file write.
+            # Since update_config parses config directly, we must update
+            # the global config correctly. `chat_conf` is a reference to an
+            # element in `config["chats"]` or `config` itself.
+            # We don't call update_config here when running parallel
+            # to avoid race conditions.
 
     if messages_list:
         last_read_message_id = await process_messages(
