@@ -1124,8 +1124,9 @@ class MediaDownloaderTestCase(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.loop.run_until_complete(async_begin_import(conf, 100))
 
+    @mock.patch("media_downloader.update_config", return_value=None)
     @mock.patch("media_downloader.process_messages", return_value=1234)
-    def test_process_chat_edge_cases(self, mock_process_messages):
+    def test_process_chat_edge_cases(self, mock_process_messages, mock_update_config):
         client = MockClient()
         conf = {"api_id": 1, "api_hash": "a"}
         chat_conf = {"chat_id": 111, "max_messages": 0}
@@ -1140,6 +1141,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
             media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
         )
         self.assertEqual(chat_conf.get("last_read_message_id"), 1234)
+        # update_config should have been called (checkpoint write)
+        mock_update_config.assert_called()
 
         chat_conf = {
             "chat_id": 222,
