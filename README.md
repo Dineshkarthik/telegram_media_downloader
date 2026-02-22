@@ -170,6 +170,10 @@ download_directory: null  # Custom directory path for downloads (absolute or rel
 start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-01' or '2023-01-01T00:00:00')
 end_date: null    # Filter messages before this date (ISO format)
 max_messages: null  # Limit the number of media items to download (integer)
+
+# Anti-ban / rate limiting (optional, can also be set per-chat)
+max_concurrent_downloads: 4   # Max files downloading at once per batch (1 = fully sequential)
+download_delay: null          # Delay between files: fixed (2) or random range ([1, 5])
 ```
 
 - api_hash  - The api_hash you got from telegram apps
@@ -185,6 +189,33 @@ max_messages: null  # Limit the number of media items to download (integer)
 - start_date - Optional: Filter messages to download only those sent after this date (ISO format). Leave `null` to disable.
 - end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave `null` to disable.
 - max_messages - Optional: Limit the number of media items to download (integer). Leave `null` for unlimited.
+- max_concurrent_downloads - Optional: Maximum number of files downloading simultaneously per batch. Lower values reduce ban risk. `1` = fully sequential. Default: `4`.
+- download_delay - Optional: Pause between starting each file download (seconds). Use a number for a fixed delay (`2`) or a list for a random range (`[1, 5]`). Leave `null` for no delay.
+
+### Rate Limiting (Anti-Ban)
+
+To reduce the risk of Telegram rate-limiting or banning your account, you can slow down the downloader with two optional settings:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `max_concurrent_downloads` | int | `4` | Max files downloading simultaneously per batch. Set to `1` for fully sequential. |
+| `download_delay` | float \| [float, float] \| null | `null` | Pause between files. Fixed seconds (`2`) or random range (`[1, 5]`). |
+
+Both options can be set **globally** or **overridden per-chat**:
+
+```yaml
+# Global (applies to all chats unless overridden)
+max_concurrent_downloads: 2
+download_delay: [1, 5]   # random 1–5 second pause between files
+
+chats:
+  - chat_id: 123456789
+    # This chat downloads faster since it's a trusted source
+    max_concurrent_downloads: 8
+    download_delay: null
+  - chat_id: 987654321
+    # Falls back to global settings (2 concurrent, random 1–5 s delay)
+```
 
 ## Execution
 ```sh
