@@ -406,14 +406,34 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
     async def _download_with_limit(message: Message) -> int:
         async with semaphore:
             if download_delay is not None:
-                if (
-                    isinstance(download_delay, (list, tuple))
-                    and len(download_delay) == 2
-                ):
-                    delay = random.uniform(download_delay[0], download_delay[1])
+                delay: Optional[float] = None
+                if isinstance(download_delay, (list, tuple)):
+                    if len(download_delay) != 2:
+                        logger.warning(
+                            "download_delay list must have exactly 2 elements "
+                            "[min, max]; got %r. Skipping delay.",
+                            download_delay,
+                        )
+                    else:
+                        try:
+                            lo, hi = float(download_delay[0]), float(download_delay[1])
+                            delay = max(0.0, random.uniform(lo, hi))
+                        except (TypeError, ValueError):
+                            logger.warning(
+                                "download_delay list %r contains non-numeric values; "
+                                "skipping delay.",
+                                download_delay,
+                            )
                 else:
-                    delay = float(download_delay)  # type: ignore[arg-type]
-                await asyncio.sleep(delay)
+                    try:
+                        delay = max(0.0, float(download_delay))  # type: ignore[arg-type]
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid download_delay value %r; skipping delay.",
+                            download_delay,
+                        )
+                if delay is not None:
+                    await asyncio.sleep(delay)
             return int(
                 await download_media(
                     client,
@@ -466,11 +486,19 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     last_read_message_id = chat_conf.get(
         "last_read_message_id", global_config.get("last_read_message_id", 0)
     )
-    max_concurrent_downloads: int = int(
-        chat_conf.get(
-            "max_concurrent_downloads", global_config.get("max_concurrent_downloads", 4)
-        )
+    _max_concurrent_raw = chat_conf.get(
+        "max_concurrent_downloads", global_config.get("max_concurrent_downloads", 4)
     )
+    try:
+        max_concurrent_downloads = int(_max_concurrent_raw)  # type: ignore[arg-type]
+        if max_concurrent_downloads <= 0:
+            raise ValueError("must be a positive integer")
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid max_concurrent_downloads value %r; defaulting to 4.",
+            _max_concurrent_raw,
+        )
+        max_concurrent_downloads = 4
     download_delay = chat_conf.get(
         "download_delay", global_config.get("download_delay")
     )
