@@ -1154,6 +1154,202 @@ class MediaDownloaderTestCase(unittest.TestCase):
             media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
         )
 
+    @mock.patch("media_downloader.update_config", return_value=None)
+    @mock.patch("media_downloader.process_messages", return_value=1234)
+    def test_process_chat_stops_at_max_messages(
+        self, mock_process_messages, mock_update_config
+    ):
+        """Test that process_chat breaks mid-batch once max_messages is reached."""
+        import asyncio
+
+        import media_downloader
+
+        client = MockClient()
+        conf = {"api_id": 1, "api_hash": "a"}
+        # max_messages=1, DOWNLOADED_IDS already has 1 entry so the break
+        # fires immediately after the first batch is processed.
+        chat_conf = {"chat_id": 333, "max_messages": 1}
+        media_downloader.DOWNLOADED_IDS[333] = [99]
+        media_downloader.FAILED_IDS[333] = []
+
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
+        )
+        mock_update_config.assert_called()
+
+    def test_process_messages_max_concurrent_downloads(self):
+        """Test that max_concurrent_downloads semaphore limits parallel execution."""
+        import media_downloader
+
+        call_order = []
+        active = []
+
+        async def mock_download(client, message, *args, **kwargs):
+            active.append(message.id)
+            # Yield control so other coroutines can run
+            await asyncio.sleep(0)
+            call_order.append(message.id)
+            active.pop()
+            return message.id
+
+        messages = [MockMessage(id=i, media=False) for i in range(1, 5)]
+        client = MockClient()
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    client, messages, [], {}, 999, max_concurrent_downloads=2
+                )
+            )
+        # All 4 messages should have been processed
+        self.assertEqual(sorted(call_order), [1, 2, 3, 4])
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    def test_process_messages_fixed_delay(self, mock_sleep):
+        """Test that a fixed download_delay calls asyncio.sleep with the right value."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        messages = [MockMessage(id=10, media=False)]
+        client = MockClient()
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    client, messages, [], {}, 999, download_delay=2.5
+                )
+            )
+        mock_sleep.assert_called_once_with(2.5)
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    @mock.patch("media_downloader.random.uniform", return_value=3.7)
+    def test_process_messages_random_delay(self, mock_uniform, mock_sleep):
+        """Test that a [min, max] download_delay calls random.uniform correctly."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        messages = [MockMessage(id=20, media=False)]
+        client = MockClient()
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    client, messages, [], {}, 999, download_delay=[1, 5]
+                )
+            )
+        mock_uniform.assert_called_once_with(1, 5)
+        mock_sleep.assert_called_once_with(3.7)
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    def test_process_messages_negative_delay_clamped(self, mock_sleep):
+        """Negative download_delay is clamped to 0."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    MockClient(),
+                    [MockMessage(id=1, media=False)],
+                    [],
+                    {},
+                    999,
+                    download_delay=-3.0,
+                )
+            )
+        mock_sleep.assert_called_once_with(0.0)
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    def test_process_messages_delay_wrong_list_length(self, mock_sleep):
+        """download_delay list with != 2 elements: warns and skips delay."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    MockClient(),
+                    [MockMessage(id=1, media=False)],
+                    [],
+                    {},
+                    999,
+                    download_delay=[1, 2, 3],
+                )
+            )
+        mock_sleep.assert_not_called()
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    def test_process_messages_delay_non_numeric_list(self, mock_sleep):
+        """download_delay list with non-numeric values: warns and skips delay."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    MockClient(),
+                    [MockMessage(id=1, media=False)],
+                    [],
+                    {},
+                    999,
+                    download_delay=["a", "b"],
+                )
+            )
+        mock_sleep.assert_not_called()
+
+    @mock.patch("media_downloader.asyncio.sleep", new_callable=mock.AsyncMock)
+    def test_process_messages_delay_non_numeric_scalar(self, mock_sleep):
+        """Non-numeric scalar download_delay: warns and skips delay."""
+        import media_downloader
+
+        async def mock_download(client, message, *args, **kwargs):
+            return message.id
+
+        with mock.patch("media_downloader.download_media", side_effect=mock_download):
+            self.loop.run_until_complete(
+                media_downloader.process_messages(
+                    MockClient(),
+                    [MockMessage(id=1, media=False)],
+                    [],
+                    {},
+                    999,
+                    download_delay="fast",
+                )
+            )
+        mock_sleep.assert_not_called()
+
+    @mock.patch("media_downloader.update_config", return_value=None)
+    @mock.patch("media_downloader.process_messages", return_value=1)
+    def test_process_chat_invalid_max_concurrent_downloads(
+        self, mock_proc, mock_update
+    ):
+        """None/bad string/zero max_concurrent_downloads falls back to 4 with warning."""
+        import asyncio
+
+        import media_downloader
+
+        client = MockClient()
+        for bad_val in [None, "auto", 0, -1]:
+            chat_conf = {"chat_id": 444, "max_concurrent_downloads": bad_val}
+            media_downloader.DOWNLOADED_IDS[444] = []
+            media_downloader.FAILED_IDS[444] = []
+            # Should not raise
+            self.loop.run_until_complete(
+                media_downloader.process_chat(
+                    client, {"api_id": 1, "api_hash": "a"}, chat_conf, 1, asyncio.Lock()
+                )
+            )
+
     def test_update_config_append_failed_ids(self):
         conf = {"chats": [{"chat_id": 12345, "ids_to_retry": [10, 20]}]}
         import media_downloader

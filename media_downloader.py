@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import random
 import re
 from datetime import date, datetime, timezone
 from typing import List, Optional, Tuple, Union
@@ -366,6 +367,8 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
     file_formats: dict,
     chat_id: Union[int, str],
     download_directory: Optional[str] = None,
+    max_concurrent_downloads: int = 4,
+    download_delay: Optional[Union[float, List[float]]] = None,
 ) -> int:
     """
     Download media from Telegram.
@@ -385,19 +388,65 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
         ID of the chat.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
+    max_concurrent_downloads: int
+        Max number of files to download simultaneously. 1 = fully sequential.
+        Default 4. Higher values speed up downloads but increase ban risk.
+    download_delay: Optional[Union[float, List[float]]]
+        Delay between starting each file download (seconds).
+        Pass a float for a fixed delay, or [min, max] for a random range.
+        None means no delay.
 
     Returns
     -------
     int
         Max value of list of message ids.
     """
-    message_ids = await asyncio.gather(
-        *[
-            download_media(
-                client, message, media_types, file_formats, chat_id, download_directory
+    semaphore = asyncio.Semaphore(max(1, max_concurrent_downloads))
+
+    async def _download_with_limit(message: Message) -> int:
+        async with semaphore:
+            if download_delay is not None:
+                delay: Optional[float] = None
+                if isinstance(download_delay, (list, tuple)):
+                    if len(download_delay) != 2:
+                        logger.warning(
+                            "download_delay list must have exactly 2 elements "
+                            "[min, max]; got %r. Skipping delay.",
+                            download_delay,
+                        )
+                    else:
+                        try:
+                            lo, hi = float(download_delay[0]), float(download_delay[1])
+                            delay = max(0.0, random.uniform(lo, hi))
+                        except (TypeError, ValueError):
+                            logger.warning(
+                                "download_delay list %r contains non-numeric values; "
+                                "skipping delay.",
+                                download_delay,
+                            )
+                else:
+                    try:
+                        delay = max(0.0, float(download_delay))  # type: ignore[arg-type]
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Invalid download_delay value %r; skipping delay.",
+                            download_delay,
+                        )
+                if delay is not None:
+                    await asyncio.sleep(delay)
+            return int(
+                await download_media(
+                    client,
+                    message,
+                    media_types,
+                    file_formats,
+                    chat_id,
+                    download_directory,
+                )
             )
-            for message in messages
-        ]
+
+    message_ids = await asyncio.gather(
+        *[_download_with_limit(message) for message in messages]
     )
     logger.info("Processed batch of %d messages for chat %s", len(messages), chat_id)
     last_message_id: int = max(message_ids)
@@ -436,6 +485,22 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     )
     last_read_message_id = chat_conf.get(
         "last_read_message_id", global_config.get("last_read_message_id", 0)
+    )
+    _max_concurrent_raw = chat_conf.get(
+        "max_concurrent_downloads", global_config.get("max_concurrent_downloads", 4)
+    )
+    try:
+        max_concurrent_downloads = int(_max_concurrent_raw)  # type: ignore[arg-type]
+        if max_concurrent_downloads <= 0:
+            raise ValueError("must be a positive integer")
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid max_concurrent_downloads value %r; defaulting to 4.",
+            _max_concurrent_raw,
+        )
+        max_concurrent_downloads = 4
+    download_delay = chat_conf.get(
+        "download_delay", global_config.get("download_delay")
     )
 
     start_date_val = chat_conf.get("start_date", global_config.get("start_date"))
@@ -514,6 +579,8 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 file_formats,
                 chat_id,
                 download_directory,
+                max_concurrent_downloads,
+                download_delay,
             )
             # Memory cleanup for next batch
             CURRENT_BATCH_IDS[chat_id] = []
@@ -540,6 +607,8 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             file_formats,
             chat_id,
             download_directory,
+            max_concurrent_downloads,
+            download_delay,
         )
         CURRENT_BATCH_IDS[chat_id] = []
         PROCESSED_IDS[chat_id] = []
