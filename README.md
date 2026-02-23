@@ -31,6 +31,13 @@ A meta of last read/downloaded message is stored in the config file so that in s
 ### ToDo:
 - Add GUI/Web interface.
 
+## 🎉 Version 3.3.0 - Anti-Ban Rate Limiting
+
+### What's New:
+- **Rate Limiting**: Added `max_concurrent_downloads` to limit simultaneous downloads and prevent Telegram bans.
+- **Download Delay**: Added `download_delay` with support for fixed or random delays between downloading files.
+- **Improved Gentle Exit**: The script safely remembers the last downloaded file when stopping.
+
 ## 🎉 Version 3.2.0 - Multi-Chat & Parallel Processing
 
 ### What's New:
