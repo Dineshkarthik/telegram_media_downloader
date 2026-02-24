@@ -42,5 +42,6 @@ test:
 		--cov db \
 		--cov-report term-missing \
 		--cov-report html:${TEST_ARTIFACTS} \
+		--cov-report xml \
 		--junit-xml=${TEST_ARTIFACTS}/media-downloader.xml \
 		tests/

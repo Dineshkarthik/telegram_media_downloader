@@ -3,12 +3,8 @@ name: Unittest
 on:
   push:
     branches: [ master ]
-    paths-ignore:
-      - 'README.md'
   pull_request:
     branches: [ master ]
-    paths-ignore:
-      - 'README.md'
 
 jobs:
   build:
@@ -28,10 +24,10 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Get setuptools Unix
       if: ${{ matrix.os != 'windows-latest' }}
-      run: pip install --upgrade pip setuptools codecov
+      run: pip install --upgrade pip setuptools
     - name: Get setuptools Windows
       if: ${{ matrix.os == 'windows-latest' }}
-      run: pip install --upgrade --user pip setuptools codecov
+      run: pip install --upgrade --user pip setuptools
     - name: Install dependencies
       run: make dev_install
     - name: Setup test configuration
@@ -39,6 +35,9 @@ jobs:
     - name: Test with pytest
       run: |
         make -e test
-        codecov
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.xml
+        fail_ci_if_error: true
