@@ -194,10 +194,6 @@ start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-
 end_date: null    # Filter messages before this date (ISO format)
 max_messages: null  # Limit the number of media items to download (integer)
 
-### Download Pacing / Rate Limiting
-To avoid being flagged as a bot or hitting Telegram rate limits, you can configure pacing settings:
-
-```yaml
 # Download Pacing / Rate Limiting (optional, can also be set per-chat)
 max_concurrent_downloads: 4   # Max files downloading at once per batch (1 = fully sequential)
 download_delay: null          # Delay between files: fixed (2) or random range ([1, 5])
@@ -219,7 +215,7 @@ download_delay: null          # Delay between files: fixed (2) or random range (
 - max_concurrent_downloads - Optional: Maximum number of files downloading simultaneously per batch. Lower values reduce ban risk. `1` = fully sequential. Default: `4`.
 - download_delay - Optional: Pause between starting each file download (seconds). Use a number for a fixed delay (`2`) or a list for a random range (`[1, 5]`). Leave `null` for no delay.
 
-### Rate Limiting (Anti-Ban)
+### Download Pacing / Rate Limiting
 
 To reduce the risk of Telegram rate-limiting or banning your account, you can slow down the downloader with two optional settings:
 
