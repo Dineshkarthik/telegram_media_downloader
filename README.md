@@ -225,9 +225,22 @@ chats:
 ```
 
 ## Execution
+
+### CLI Execution
 ```sh
 python3 media_downloader.py
 ```
+
+### Web UI Execution
+> **Note**: The Web UI relies on NiceGUI and requires **Python 3.10** or higher.
+
+For an interactive experience that lets you configure downloads and track progress visually, you can start the built-in Web UI (powered by NiceGUI).
+
+```sh
+python3 webui.py
+```
+This will start a local web server (usually at `http://127.0.0.1:8080`). Open that URL in your browser to interact with the downloader.
+
 
 ### Download Directories
 

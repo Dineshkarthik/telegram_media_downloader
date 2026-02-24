@@ -6,12 +6,12 @@ This file provides architectural context, coding guidelines, and project convent
 A Python-based utility script using [Telethon](https://docs.telethon.dev/) to download media files (audio, document, photo, video, voice, video_note) from Telegram chats and channels without storing files that already exist in the target directory.
 
 ## Core Architecture
-- **Entry Point**: `media_downloader.py`. 
+- **Entry Point**: `media_downloader.py`.
 - **Configuration**: Managed via `config.yaml` (see `config.yaml.example` for the schema). The configuration heavily utilizes a global/local fallback system where chat-specific settings inherit from global settings if not explicitly overridden.
 - **State Management**: The application tracks downloaded messages and failed downloads to avoid duplicates.
   - **In-memory state**: `DOWNLOADED_IDS` and `FAILED_IDS` (dictionaries mapping `chat_id` -> `List[int]`).
   - **Persistent state**: Saved directly back into the `config.yaml` file after every batch via `update_config()`.
-- **Concurrency**: 
+- **Concurrency**:
   - **Chats**: Iterated sequentially by default, or in parallel using `asyncio.gather` if `parallel_chats` is set to `true` in config.
   - **Downloads**: Handled concurrently within a chat batch via `asyncio.gather` wrapped in an `asyncio.Semaphore(max_concurrent_downloads)` to prevent Telegram rate-limit bans constraints.
 
@@ -23,7 +23,7 @@ A Python-based utility script using [Telethon](https://docs.telethon.dev/) to do
 
 ## Development & Testing
 - **Formatting and Linting**: Python code uses `black`, `isort`, `mypy`, and `pylint`. These are strictly enforced via `pre-commit`. **Always run `pre-commit run --all-files` before finalizing changes.**
-- **Testing**: Uses `pytest`. The test suite is located in `tests/test_media_downloader.py` and extensively mocks Telethon client calls, file I/O operations (`yaml.dump`, `open`), and delays (`asyncio.sleep`) using `unittest.mock`. 
+- **Testing**: Uses `pytest`. The test suite is located in `tests/test_media_downloader.py` and extensively mocks Telethon client calls, file I/O operations (`yaml.dump`, `open`), and delays (`asyncio.sleep`) using `unittest.mock`.
   - **Run tests locally after every change:** `pytest tests/ -v`.
   - Ensure any new code has its edge cases, mock configurations, and bounds covered in tests.
 - App version is available in `utils/__init__.py`.
