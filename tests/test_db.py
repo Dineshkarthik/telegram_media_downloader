@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import tempfile
 import unittest
 from unittest import mock
 
@@ -14,19 +15,23 @@ class TestDB(unittest.TestCase):
     def setUp(self):
         # Reset initialized flag for fresh testing
         db._db_initialized = False
-        # Clear the temporary DB file for each test
-        if os.path.exists(db.DB_PATH):
-            try:
-                os.remove(db.DB_PATH)
-            except OSError:
-                pass
+        # Create a unique temporary file for this test
+        self.test_db_file = tempfile.NamedTemporaryFile(delete=False, suffix=".sqlite3")
+        self.test_db_file.close()  # Close it so SQLite can open it
+        self.test_db_path = self.test_db_file.name
+
+        # Point db.DB_PATH to our unique file
+        self.patcher = mock.patch("db.DB_PATH", self.test_db_path)
+        self.patcher.start()
 
     def tearDown(self):
-        # Clean up after test
-        if os.path.exists(db.DB_PATH):
+        self.patcher.stop()
+        # Clean up the unique DB file
+        if os.path.exists(self.test_db_path):
             try:
-                os.remove(db.DB_PATH)
+                os.remove(self.test_db_path)
             except OSError:
+                # On Windows, it might still be locked briefly
                 pass
 
     def test_init_db(self):
