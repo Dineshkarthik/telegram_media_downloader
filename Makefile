@@ -38,8 +38,6 @@ style_check: static_type_check pylint
 test:
 	python3 -m pytest --cov media_downloader --doctest-modules \
 		--cov utils \
-		--cov config_manager \
-		--cov db \
 		--cov-report term-missing \
 		--cov-report html:${TEST_ARTIFACTS} \
 		--cov-report xml \
