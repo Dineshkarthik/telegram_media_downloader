@@ -28,9 +28,10 @@ A meta of last read/downloaded message is stored in the config file so that in s
 |Language | `Python 3.8 ` and above|
 |Download media types|  audio, document, photo, video, video_note, voice|
 
-### ToDo:
-- Support for more media providers.
-- Improved media filtering.
+## 🎉 Version 3.4.0 - Interactive Web UI
+
+### What's New:
+- **Interactive Web UI**: Added a sleek web-based interface for configuration and execution monitoring.
 
 ## 🎉 Version 3.3.0 - Download Pacing / Rate Limiting
 
