@@ -199,21 +199,23 @@ max_concurrent_downloads: 4   # Max files downloading at once per batch (1 = ful
 download_delay: null          # Delay between files: fixed (2) or random range ([1, 5])
 ```
 
-- api_hash  - The api_hash you got from telegram apps
-- api_id - The api_id you got from telegram apps
-- parallel_chats - If `true`, downloads chats inside the `chats` list concurrently.
-- chats: A list of discrete chats/channels to download from. Setting `media_types`, `download_directory`, etc., locally inside here overrides global options.
-- chat_id -  The id of the chat/channel you want to download media for. Can be set globally or locally.
-- last_read_message_id - If it is the first time you are going to read the channel let it be `0` or if you have already used this script it will have auto-updated.
-- ids_to_retry - `Leave it as it is.` This keeps track of all skipped downloads to retry.
-- media_types - Type of media to download.
-- file_formats - File types to download. Default is `all`.
-- download_directory - Optional: Custom directory path where media files will be downloaded. Can be absolute or relative path. If `null`, uses default directory structure.
-- start_date - Optional: Filter messages to download only those sent after this date (ISO format). Leave `null` to disable.
-- end_date - Optional: Filter messages to download only those sent before this date (ISO format). Leave `null` to disable.
-- max_messages - Optional: Limit the number of media items to download (integer). Leave `null` for unlimited.
-- max_concurrent_downloads - Optional: Maximum number of files downloading simultaneously per batch. Lower values reduce ban risk. `1` = fully sequential. Default: `4`.
-- download_delay - Optional: Pause between starting each file download (seconds). Use a number for a fixed delay (`2`) or a list for a random range (`[1, 5]`). Leave `null` for no delay.
+| Option | Description |
+|---|---|
+| `api_hash` | The api_hash you got from telegram apps |
+| `api_id` | The api_id you got from telegram apps |
+| `parallel_chats` | If `true`, downloads chats inside the `chats` list concurrently. |
+| `chats` | A list of discrete chats/channels to download from. Setting `media_types`, `download_directory`, etc., locally inside here overrides global options. |
+| `chat_id` | The id of the chat/channel you want to download media for. Can be set globally or locally. |
+| `last_read_message_id` | If it is the first time you are going to read the channel let it be `0` or if you have already used this script it will have auto-updated. |
+| `ids_to_retry` | `Leave it as it is.` This keeps track of all skipped downloads to retry. |
+| `media_types` | Type of media to download. |
+| `file_formats` | File types to download. Default is `all`. |
+| `download_directory` | Optional: Custom directory path where media files will be downloaded. Can be absolute or relative path. If `null`, uses default directory structure. |
+| `start_date` | Optional: Filter messages to download only those sent after this date (ISO format). Leave `null` to disable. |
+| `end_date` | Optional: Filter messages to download only those sent before this date (ISO format). Leave `null` to disable. |
+| `max_messages` | Optional: Limit the number of media items to download (integer). Leave `null` for unlimited. |
+| `max_concurrent_downloads` | Optional: Maximum number of files downloading simultaneously per batch. Lower values reduce ban risk. `1` = fully sequential. Default: `4`. |
+| `download_delay` | Optional: Pause between starting each file download (seconds). Use a number for a fixed delay (`2`) or a list for a random range (`[1, 5]`). Leave `null` for no delay. |
 
 ### Download Pacing / Rate Limiting
 
