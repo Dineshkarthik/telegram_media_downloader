@@ -52,7 +52,7 @@ start_date: null
 end_date: null
 max_messages: null
 
-# Anti-ban / rate limiting (optional, can also be set per-chat)
+# Download Pacing / Rate Limiting (optional, can also be set per-chat)
 # Max number of files downloading simultaneously within each batch.
 # Lower values = slower but safer.  1 = fully sequential.  Default: 4
 max_concurrent_downloads: 4

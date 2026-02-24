@@ -17,7 +17,7 @@ A Python-based utility script using [Telethon](https://docs.telethon.dev/) to do
 
 ## Key Principles & Conventions
 1. **Async & Telethon**: The core logic is highly asynchronous. Always use `async`/`await` patterns natively with `asyncio`.
-2. **Rate Limiting (Anti-Ban)**: Operations against the Telegram API must respect rate limits. `max_concurrent_downloads` limits simultaneous file streams, and `download_delay` inserts `asyncio.sleep` pauses between downloads natively through `random.uniform` and `float` casts.
+2. **Rate Limiting (Download Pacing)**: Operations against the Telegram API must respect rate limits. `max_concurrent_downloads` limits simultaneous file streams, and `download_delay` inserts `asyncio.sleep` pauses between downloads natively through `random.uniform` and `float` casts.
 3. **Graceful Exits**: The script listens to `KeyboardInterrupt`. When triggered, it stops fetching new batches, finishes the current processing boundary, calculates the maximum contiguous successful `message_id`, and flushes state to the YAML config before exiting gracefully.
 4. **Memory Safety**: Global state lists (`PROCESSED_IDS`, `CURRENT_BATCH_IDS`) are purged between pagination loops/batches to prevent severe memory leaks on channels with huge media populations.
 
