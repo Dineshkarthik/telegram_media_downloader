@@ -476,7 +476,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
     def test_get_media_meta_custom_directory(self):
         """Test _get_media_meta with custom download directory."""
-        custom_dir = "/custom/downloads"
+        custom_dir = platform_generic_path("/custom/downloads")
 
         # Test Voice notes with custom directory
         message = MockMessage(
