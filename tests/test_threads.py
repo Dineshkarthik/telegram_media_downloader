@@ -43,7 +43,7 @@ class TestThreadsDownloading(unittest.TestCase):
         self.client = MockClientWithThreads()
 
     def test_process_chat_with_threads(self):
-        chat_conf = {"chat_id": 12345, "threads": [11, 22]}
+        chat_conf = {"chat_id": 12345, "threads": ["11", "22", "invalid_string"]}
         global_config = {}
         config_write_lock = asyncio.Lock()
 

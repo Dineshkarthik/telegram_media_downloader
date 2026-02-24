@@ -580,15 +580,23 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
 
-    thread_ids = chat_conf.get("threads", [])
-    if not isinstance(thread_ids, list):
+    thread_ids_raw = chat_conf.get("threads", global_config.get("threads", []))
+    thread_ids = []
+
+    if isinstance(thread_ids_raw, list):
+        for t in thread_ids_raw:
+            try:
+                thread_ids.append(int(str(t).strip()))
+            except ValueError:
+                logger.warning("Invalid thread ID '%s' ignored.", t)
+    else:
         try:
-            thread_ids = [int(str(thread_ids).strip())]
+            thread_ids.append(int(str(thread_ids_raw).strip()))
         except ValueError:
             logger.warning(
-                "Invalid threads value in config: %r; defaulting to none.", thread_ids
+                "Invalid threads value in config: %r; defaulting to none.",
+                thread_ids_raw,
             )
-            thread_ids = []
 
     # If threads is specified, create a combined generator of messages
     # across all threads. Otherwise, just fetch the whole chat.
