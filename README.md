@@ -28,6 +28,12 @@ A meta of last read/downloaded message is stored in the config file so that in s
 |Language | `Python 3.8 ` and above|
 |Download media types|  audio, document, photo, video, video_note, voice|
 
+## 🎉 Version 3.5.0 - Specific Thread Downloading
+
+### What's New:
+- **Targeted Chat Threads**: Download only the messages from a specific thread or topic in your channels by assigning thread IDs!
+- **Extended Web UI Control**: An "Advanced Overrides" section brings thread targeting natively to the visual interface.
+
 ## 🎉 Version 3.4.0 - Interactive Web UI
 
 ### What's New:
