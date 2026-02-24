@@ -321,6 +321,14 @@ class MediaDownloaderTestCase(unittest.TestCase):
     def setUpClass(cls):
         cls.loop = asyncio.get_event_loop()
 
+    def setUp(self):
+        # Prevent tests from writing to the real SQLite database
+        self._db_record_patcher = mock.patch("media_downloader.db.record_download")
+        self._db_record_patcher.start()
+
+    def tearDown(self):
+        self._db_record_patcher.stop()
+
     @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
     def test_get_media_meta(self):
         # Test Voice notes
@@ -744,9 +752,8 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         self.assertEqual(14, result)
 
-    @mock.patch("__main__.__builtins__.open", new_callable=mock.mock_open)
-    @mock.patch("media_downloader.yaml", autospec=True)
-    def test_update_config(self, mock_yaml, mock_open):
+    @mock.patch("config_manager.save_config")
+    def test_update_config(self, mock_save):
         conf = {
             "api_id": 123,
             "api_hash": "hasw5Tgawsuj67",
@@ -754,10 +761,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "chat_id": 8654123,
         }
         update_config(conf)
-        mock_open.assert_called_with("config.yaml", "w")
-        mock_yaml.dump.assert_called_with(
-            conf, mock.ANY, sort_keys=False, default_flow_style=False
-        )
+        mock_save.assert_called_once_with(conf)
 
     def test_get_media_type(self):
         # Test photo
@@ -1356,27 +1360,25 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
         media_downloader.FAILED_IDS[12345] = [20, 30]
         media_downloader.DOWNLOADED_IDS[12345] = [10]
-        with mock.patch("media_downloader.open", mock.mock_open()), mock.patch(
-            "media_downloader.yaml.dump"
-        ):
+        with mock.patch("config_manager.save_config"):
             media_downloader.update_config(conf)
 
         self.assertIn(30, conf["chats"][0]["ids_to_retry"])
         self.assertNotIn(10, conf["chats"][0]["ids_to_retry"])
 
     @mock.patch("media_downloader.FAILED_IDS", {8654123: [2, 3], "123": [], 12345: []})
-    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("config_manager.load_config")
     @mock.patch("media_downloader.update_config", return_value=True)
     @mock.patch("media_downloader.begin_import")
     @mock.patch("media_downloader.asyncio", new=MockAsync())
-    def test_main(self, mock_import, mock_update, mock_yaml):
+    def test_main(self, mock_import, mock_update, mock_load):
         conf = {
             "api_id": 1,
             "api_hash": "asdf",
             "ids_to_retry": [1, 2],
             "chat_id": 8654123,
         }
-        mock_yaml.return_value = conf
+        mock_load.return_value = conf
         main()
         mock_import.assert_called_with(conf, pagination_limit=100)
         conf["ids_to_retry"] = [1, 2, 3]
@@ -1385,11 +1387,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
     @mock.patch(
         "media_downloader.FAILED_IDS", {8654123: [1, 2, 3], "123": [], 12345: []}
     )
-    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("config_manager.load_config")
     @mock.patch("media_downloader.update_config", return_value=True)
     @mock.patch("media_downloader.begin_import")
     @mock.patch("media_downloader.asyncio", new=MockAsync())
-    def test_main_with_failed_ids(self, mock_import, mock_update, mock_yaml):
+    def test_main_with_failed_ids(self, mock_import, mock_update, mock_load):
         """Test main function when FAILED_IDS contains items to cover logging"""
         conf = {
             "api_id": 1,
@@ -1397,7 +1399,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "ids_to_retry": [],
             "chat_id": 8654123,
         }
-        mock_yaml.return_value = conf
+        mock_load.return_value = conf
         mock_import.return_value = conf
         main()
         mock_import.assert_called_with(conf, pagination_limit=100)
@@ -1409,9 +1411,9 @@ class MediaDownloaderTestCase(unittest.TestCase):
     @mock.patch("media_downloader.PROCESSED_IDS", {8654123: [20, 19]})
     @mock.patch("media_downloader.CURRENT_BATCH_IDS", {8654123: [20, 19, 18, 17]})
     @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
-    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("config_manager.load_config")
     @mock.patch("media_downloader.update_config", return_value=True)
-    def test_main_with_keyboard_interrupt(self, mock_update, mock_yaml):
+    def test_main_with_keyboard_interrupt(self, mock_update, mock_load):
         """Test main function when KeyboardInterrupt is raised mid-batch."""
         conf = {
             "api_id": 1,
@@ -1419,7 +1421,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "ids_to_retry": [],
             "chat_id": 8654123,
         }
-        mock_yaml.return_value = conf
+        mock_load.return_value = conf
 
         mock_loop = mock.Mock()
         mock_loop.run_until_complete.side_effect = KeyboardInterrupt()
@@ -1436,9 +1438,9 @@ class MediaDownloaderTestCase(unittest.TestCase):
     @mock.patch("media_downloader.PROCESSED_IDS", {8654123: [20, 19, 18, 17]})
     @mock.patch("media_downloader.CURRENT_BATCH_IDS", {8654123: [20, 19, 18, 17]})
     @mock.patch("media_downloader.FAILED_IDS", {8654123: [], "123": [], 12345: []})
-    @mock.patch("media_downloader.yaml.safe_load")
+    @mock.patch("config_manager.load_config")
     @mock.patch("media_downloader.update_config", return_value=True)
-    def test_main_with_keyboard_interrupt_full_batch(self, mock_update, mock_yaml):
+    def test_main_with_keyboard_interrupt_full_batch(self, mock_update, mock_load):
         """KeyboardInterrupt when entire batch was already processed."""
         conf = {
             "api_id": 1,
@@ -1446,7 +1448,7 @@ class MediaDownloaderTestCase(unittest.TestCase):
             "ids_to_retry": [],
             "chat_id": 8654123,
         }
-        mock_yaml.return_value = conf
+        mock_load.return_value = conf
 
         mock_loop = mock.Mock()
         mock_loop.run_until_complete.side_effect = KeyboardInterrupt()

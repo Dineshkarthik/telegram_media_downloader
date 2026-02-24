@@ -62,3 +62,6 @@ video_note/
 
 # Config file
 config.yaml
+
+# Database
+downloads.sqlite3

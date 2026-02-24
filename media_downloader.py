@@ -8,7 +8,6 @@ import re
 from datetime import date, datetime, timezone
 from typing import List, Optional, Tuple, Union
 
-import yaml
 from rich.logging import RichHandler
 from telethon import TelegramClient
 from telethon.errors import FileReferenceExpiredError
@@ -21,6 +20,8 @@ from telethon.tl.types import (
 )
 from tqdm import tqdm
 
+import config_manager
+import db
 from utils.file_management import get_next_name, manage_duplicate_file
 from utils.log import LogFilter
 from utils.meta import APP_VERSION, DEVICE_MODEL, LANG_CODE, SYSTEM_VERSION, print_meta
@@ -41,6 +42,9 @@ FAILED_IDS: dict = {}
 DOWNLOADED_IDS: dict = {}
 PROCESSED_IDS: dict = {}
 CURRENT_BATCH_IDS: dict = {}
+
+# Global hook for Web UI to receive progress updates
+UI_PROGRESS_HOOK = None
 
 
 def update_config(config: dict):
@@ -72,8 +76,7 @@ def update_config(config: dict):
                 + FAILED_IDS[chat_id]
             )
 
-    with open("config.yaml", "w") as yaml_file:
-        yaml.dump(config, yaml_file, sort_keys=False, default_flow_style=False)
+    config_manager.save_config(config)
     logger.info("Updated last read message_id to config file")
 
 
@@ -138,6 +141,9 @@ def _progress_callback(current: int, total: int, pbar: tqdm) -> None:
         pbar.total = total
         pbar.reset()
     pbar.update(current - pbar.n)
+
+    if UI_PROGRESS_HOOK is not None:
+        UI_PROGRESS_HOOK(pbar.desc, current, total)
 
 
 async def _get_media_meta(
@@ -225,6 +231,7 @@ def get_media_type(message: Message) -> Optional[str]:
     return None
 
 
+# pylint: disable=too-many-nested-blocks
 async def download_media(  # pylint: disable=too-many-locals,too-many-branches,too-many-positional-arguments,too-many-statements
     client: TelegramClient,
     message: Message,
@@ -318,6 +325,33 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
                 if download_path:
                     logger.info("Media downloaded - %s", download_path)
                     logger.debug("Successfully downloaded message %s", message.id)
+                    abs_path = os.path.abspath(download_path)
+                    actual_size = (
+                        os.path.getsize(abs_path)
+                        if os.path.exists(abs_path)
+                        else file_size
+                    )
+                    actual_name = os.path.basename(abs_path)
+                    db.record_download(
+                        str(chat_id),
+                        message.id,
+                        actual_name,
+                        actual_size,
+                        abs_path,
+                        _type,
+                    )
+                    if UI_PROGRESS_HOOK is not None:
+                        # Optional signature expansion for UI logic
+                        try:
+                            UI_PROGRESS_HOOK(
+                                desc,
+                                actual_size,
+                                actual_size,
+                                file_path=abs_path,
+                                media_type=_type,
+                            )
+                        except TypeError:
+                            pass
                 DOWNLOADED_IDS[chat_id].append(message.id)
 
             PROCESSED_IDS[chat_id].append(message.id)
@@ -698,8 +732,7 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
 
 def main():
     """Main function of the downloader."""
-    with open(os.path.join(THIS_DIR, "config.yaml")) as f:
-        config = yaml.safe_load(f)
+    config = config_manager.load_config()
 
     updated_config = config
     try:
