@@ -86,6 +86,27 @@ def build_config_tab(config: dict, save_config_fn):
             )
 
         with ui.row().style("gap: 16px; width: 100%; margin-bottom: 16px;"):
+            global_inputs["start_date"] = (
+                ui.input("Start Date", value=config.get("start_date", ""))
+                .classes("col")
+                .props('outlined dense hint="YYYY-MM-DDTHH:MM:SS+00:00"')
+            )
+            global_inputs["end_date"] = (
+                ui.input("End Date", value=config.get("end_date", ""))
+                .classes("col")
+                .props('outlined dense hint="YYYY-MM-DDTHH:MM:SS+00:00"')
+            )
+            global_inputs["max_messages"] = (
+                ui.number(
+                    "Max Messages",
+                    value=config.get("max_messages", None),
+                    format="%.0f",
+                )
+                .classes("col")
+                .props("outlined dense")
+            )
+
+        with ui.row().style("gap: 16px; width: 100%; margin-bottom: 16px;"):
             global_inputs["max_concurrent"] = (
                 ui.number(
                     "Max Concurrent",
@@ -132,6 +153,44 @@ def build_config_tab(config: dict, save_config_fn):
                 "Parallel Chats",
                 value=config.get("parallel_chats", False),
             ).style("color: var(--text-secondary);")
+
+        with ui.expansion("File Formats (Comma-separated)", icon="folder_zip").props(
+            "dense"
+        ).style("width: 100%; font-size: 13px; margin-top: 8px;"):
+            with ui.row().style("gap: 16px; width: 100%; padding-top: 8px;"):
+                file_formats = config.get("file_formats", {})
+                global_inputs["format_audio"] = (
+                    ui.input(
+                        "Audio Formats",
+                        value=",".join(file_formats.get("audio", ["all"])),
+                    )
+                    .classes("col")
+                    .props('outlined dense hint="e.g. mp3,flac or all"')
+                )
+                global_inputs["format_video"] = (
+                    ui.input(
+                        "Video Formats",
+                        value=",".join(file_formats.get("video", ["all"])),
+                    )
+                    .classes("col")
+                    .props('outlined dense hint="e.g. mp4,mkv or all"')
+                )
+                global_inputs["format_photo"] = (
+                    ui.input(
+                        "Photo Formats",
+                        value=",".join(file_formats.get("photo", ["all"])),
+                    )
+                    .classes("col")
+                    .props('outlined dense hint="e.g. jpg,png or all"')
+                )
+                global_inputs["format_document"] = (
+                    ui.input(
+                        "Document Formats",
+                        value=",".join(file_formats.get("document", ["all"])),
+                    )
+                    .classes("col")
+                    .props('outlined dense hint="e.g. pdf,epub or all"')
+                )
 
     # ── Target Chats Card ──
     with ui.element("div").classes("premium-card").style(
@@ -195,35 +254,173 @@ def build_config_tab(config: dict, save_config_fn):
                     with ui.expansion("Advanced Overrides", icon="tune").props(
                         "dense"
                     ).style("margin-top: 8px; font-size: 13px;"):
-                        with ui.row().style(
-                            "gap: 12px; width: 100%; padding-top: 8px;"
+                        with ui.column().style(
+                            "gap: 16px; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 8px; width: 100%;"
                         ):
-                            c_inputs["download_dir"] = (
-                                ui.input(
-                                    "Override Directory",
-                                    value=chat_data.get("download_directory", ""),
+                            # General & Pacing
+                            with ui.column().style("gap: 4px; width: 100%;"):
+                                ui.label("General & Pacing Limits").style(
+                                    "font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;"
                                 )
-                                .classes("col")
-                                .props("outlined dense")
-                            )
-                            _c_media = chat_data.get("media_types", [])
-                            c_inputs["media_types"] = (
-                                ui.select(
-                                    options=[
-                                        "photo",
-                                        "video",
-                                        "document",
-                                        "audio",
-                                        "voice",
-                                        "video_note",
-                                    ],
-                                    value=_c_media,
-                                    multiple=True,
-                                    label="Override Media Types",
+                                with ui.row().style("gap: 12px; width: 100%;"):
+                                    c_inputs["download_dir"] = (
+                                        ui.input(
+                                            "Override Directory",
+                                            value=chat_data.get(
+                                                "download_directory", ""
+                                            ),
+                                        )
+                                        .classes("col")
+                                        .props("outlined dense")
+                                    )
+                                    c_inputs["max_concurrent"] = (
+                                        ui.number(
+                                            "Concurrent",
+                                            value=chat_data.get(
+                                                "max_concurrent_downloads", None
+                                            ),
+                                            format="%.0f",
+                                        )
+                                        .classes("col")
+                                        .props('outlined dense hint="Max concurrent"')
+                                    )
+                                    c_delay_val = chat_data.get("download_delay")
+                                    if isinstance(c_delay_val, list):
+                                        c_delay_str = (
+                                            f"{c_delay_val[0]}, {c_delay_val[1]}"
+                                        )
+                                    else:
+                                        c_delay_str = (
+                                            str(c_delay_val)
+                                            if c_delay_val is not None
+                                            else ""
+                                        )
+                                    c_inputs["download_delay"] = (
+                                        ui.input("Delay (sec)", value=c_delay_str)
+                                        .classes("col")
+                                        .props('outlined dense hint="e.g. 2 or 1,5"')
+                                    )
+
+                            ui.separator().style("opacity: 0.5")
+
+                            # Message Filters
+                            with ui.column().style("gap: 4px; width: 100%;"):
+                                ui.label("Message Filters").style(
+                                    "font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;"
                                 )
-                                .classes("col")
-                                .props("outlined dense use-chips")
-                            )
+                                with ui.row().style("gap: 12px; width: 100%;"):
+                                    c_inputs["start_date"] = (
+                                        ui.input(
+                                            "Override Start Date",
+                                            value=chat_data.get("start_date", ""),
+                                        )
+                                        .classes("col")
+                                        .props("outlined dense")
+                                    )
+                                    c_inputs["end_date"] = (
+                                        ui.input(
+                                            "Override End Date",
+                                            value=chat_data.get("end_date", ""),
+                                        )
+                                        .classes("col")
+                                        .props("outlined dense")
+                                    )
+                                    c_inputs["max_messages"] = (
+                                        ui.number(
+                                            "Override Max Messages",
+                                            value=chat_data.get("max_messages", None),
+                                            format="%.0f",
+                                        )
+                                        .classes("col")
+                                        .props("outlined dense")
+                                    )
+
+                            ui.separator().style("opacity: 0.5")
+
+                            # Media & Formats
+                            with ui.column().style("gap: 4px; width: 100%;"):
+                                ui.label("Media Types & Formats").style(
+                                    "font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;"
+                                )
+                                with ui.row().style(
+                                    "gap: 12px; width: 100%; align-items: start;"
+                                ):
+                                    _c_media = chat_data.get("media_types", [])
+                                    c_inputs["media_types"] = (
+                                        ui.select(
+                                            options=[
+                                                "photo",
+                                                "video",
+                                                "document",
+                                                "audio",
+                                                "voice",
+                                                "video_note",
+                                            ],
+                                            value=_c_media,
+                                            multiple=True,
+                                            label="Override Media Types",
+                                        )
+                                        .classes("col")
+                                        .props("outlined dense use-chips")
+                                    )
+
+                                    c_formats = chat_data.get("file_formats", {})
+                                    with ui.column().classes("col").style("gap: 4px;"):
+                                        ui.label("Override Formats:").style(
+                                            "font-size: 11px; color: var(--text-tertiary); margin-left: 4px; margin-bottom: -6px;"
+                                        )
+                                        with ui.row().style("gap: 8px; width: 100%;"):
+                                            c_inputs["format_audio"] = (
+                                                ui.input(
+                                                    "Override Audio",
+                                                    value=",".join(
+                                                        c_formats.get("audio", [])
+                                                    ),
+                                                )
+                                                .classes("col")
+                                                .props(
+                                                    'outlined dense placeholder="all"'
+                                                )
+                                            )
+                                            c_inputs["format_video"] = (
+                                                ui.input(
+                                                    "Override Video",
+                                                    value=",".join(
+                                                        c_formats.get("video", [])
+                                                    ),
+                                                )
+                                                .classes("col")
+                                                .props(
+                                                    'outlined dense placeholder="all"'
+                                                )
+                                            )
+                                        with ui.row().style(
+                                            "gap: 8px; width: 100%; align-items: start; margin-top: 4px;"
+                                        ):
+                                            c_inputs["format_photo"] = (
+                                                ui.input(
+                                                    "Override Photo",
+                                                    value=",".join(
+                                                        c_formats.get("photo", [])
+                                                    ),
+                                                )
+                                                .classes("col")
+                                                .props(
+                                                    'outlined dense placeholder="all"'
+                                                )
+                                            )
+                                            c_inputs["format_document"] = (
+                                                ui.input(
+                                                    "Override Doc",
+                                                    value=",".join(
+                                                        c_formats.get("document", [])
+                                                    ),
+                                                )
+                                                .classes("col")
+                                                .props(
+                                                    'outlined dense placeholder="all"'
+                                                )
+                                            )
                     chat_inputs.append(c_inputs)
 
         # Init existing chats
@@ -280,6 +477,49 @@ def build_config_tab(config: dict, save_config_fn):
             del config["download_delay"]
         config["media_types"] = global_inputs["media_types"].value
 
+        if global_inputs["start_date"].value.strip():
+            config["start_date"] = global_inputs["start_date"].value.strip()
+        elif "start_date" in config:
+            del config["start_date"]
+
+        if global_inputs["end_date"].value.strip():
+            config["end_date"] = global_inputs["end_date"].value.strip()
+        elif "end_date" in config:
+            del config["end_date"]
+
+        if global_inputs["max_messages"].value is not None:
+            config["max_messages"] = int(global_inputs["max_messages"].value)
+        elif "max_messages" in config:
+            del config["max_messages"]
+
+        # File Formats
+        config["file_formats"] = {
+            "audio": [
+                x.strip()
+                for x in global_inputs["format_audio"].value.split(",")
+                if x.strip()
+            ]
+            or ["all"],
+            "video": [
+                x.strip()
+                for x in global_inputs["format_video"].value.split(",")
+                if x.strip()
+            ]
+            or ["all"],
+            "photo": [
+                x.strip()
+                for x in global_inputs["format_photo"].value.split(",")
+                if x.strip()
+            ]
+            or ["all"],
+            "document": [
+                x.strip()
+                for x in global_inputs["format_document"].value.split(",")
+                if x.strip()
+            ]
+            or ["all"],
+        }
+
         built_chats = []
         for c_in in chat_inputs:
             chat_val = c_in["chat_id"].value.strip()
@@ -300,6 +540,59 @@ def build_config_tab(config: dict, save_config_fn):
                 chat_obj["download_directory"] = c_in["download_dir"].value.strip()
             if c_in["media_types"].value:
                 chat_obj["media_types"] = c_in["media_types"].value
+
+            if c_in["max_concurrent"].value is not None:
+                chat_obj["max_concurrent_downloads"] = int(c_in["max_concurrent"].value)
+
+            c_delay_str = c_in["download_delay"].value.strip()
+            if c_delay_str:
+                if "," in c_delay_str:
+                    c_delay_parts = [
+                        int(x.strip())
+                        for x in c_delay_str.split(",")
+                        if x.strip().isdigit()
+                    ]
+                    if len(c_delay_parts) == 2:
+                        chat_obj["download_delay"] = c_delay_parts
+                elif c_delay_str.isdigit():
+                    chat_obj["download_delay"] = int(c_delay_str)
+
+            if c_in["start_date"].value.strip():
+                chat_obj["start_date"] = c_in["start_date"].value.strip()
+            if c_in["end_date"].value.strip():
+                chat_obj["end_date"] = c_in["end_date"].value.strip()
+            if c_in["max_messages"].value is not None:
+                chat_obj["max_messages"] = int(c_in["max_messages"].value)
+
+            # Chat-specific file_formats
+            chat_formats = {}
+            if c_in["format_audio"].value.strip():
+                chat_formats["audio"] = [
+                    x.strip()
+                    for x in c_in["format_audio"].value.split(",")
+                    if x.strip()
+                ]
+            if c_in["format_video"].value.strip():
+                chat_formats["video"] = [
+                    x.strip()
+                    for x in c_in["format_video"].value.split(",")
+                    if x.strip()
+                ]
+            if c_in["format_photo"].value.strip():
+                chat_formats["photo"] = [
+                    x.strip()
+                    for x in c_in["format_photo"].value.split(",")
+                    if x.strip()
+                ]
+            if c_in["format_document"].value.strip():
+                chat_formats["document"] = [
+                    x.strip()
+                    for x in c_in["format_document"].value.split(",")
+                    if x.strip()
+                ]
+            if chat_formats:
+                chat_obj["file_formats"] = chat_formats
+
             built_chats.append(chat_obj)
         config["chats"] = built_chats
 
@@ -307,12 +600,6 @@ def build_config_tab(config: dict, save_config_fn):
             del config["chat_id"]
         if "last_read_message_id" in config:
             del config["last_read_message_id"]
-        if "file_formats" not in config:
-            config["file_formats"] = {
-                "audio": ["all"],
-                "document": ["all"],
-                "video": ["all"],
-            }
 
         save_config_fn(config)
         ui.notify(

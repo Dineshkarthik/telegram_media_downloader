@@ -2,8 +2,20 @@
 
 import logging
 import os
+import sys
 
-from nicegui import app, ui
+try:
+    from nicegui import app, ui
+except ImportError:
+    print("\n[ERROR] Web UI dependencies are not installed.")
+    print(
+        "The Web UI is now an optional installation to keep the base application lightweight."
+    )
+    print("To use the graphical interface, please run:")
+    print("  make install_webui")
+    print("  or")
+    print("  pip install -r requirements-webui.txt\n")
+    sys.exit(1)
 
 from config_manager import load_config, save_config
 from webui.config_tab import build_config_tab
@@ -27,13 +39,13 @@ def index():
     current_page = {"value": "config"}
 
     # We'll use a column-based layout: sidebar + main content
-    with ui.row().classes("w-full min-h-screen").style("margin:0; padding:0; gap:0;"):
+    with ui.row().classes("w-full h-screen").style("margin:0; padding:0; gap:0;"):
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         #  LEFT SIDEBAR
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         with ui.column().classes("sidebar").style(
-            "width: 260px; min-width: 260px; min-height: 100vh; padding: 24px 16px; "
+            "width: 260px; min-width: 260px; height: 100vh; position: sticky; top: 0; padding: 24px 16px; "
             "display: flex; flex-direction: column; justify-content: space-between;"
         ):
             with ui.column().style("gap: 4px;"):
@@ -112,7 +124,7 @@ def index():
         #  MAIN CONTENT AREA
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         with ui.column().style(
-            "flex: 1; min-height: 100vh; padding: 32px 40px; overflow-y: auto; "
+            "flex: 1; height: 100vh; padding: 32px 40px; overflow-y: auto; "
             "background: var(--surface-dim);"
         ):
 

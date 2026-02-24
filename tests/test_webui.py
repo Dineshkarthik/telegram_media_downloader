@@ -104,6 +104,17 @@ class TestTour(unittest.TestCase):
 
         self.assertTrue(callable(build_tour))
 
+    def test_build_tour_functional(self):
+        """Verify build_tour can be instantiated."""
+        from webui.tour import build_tour
+
+        with ui.column():
+            # build_tour(current_page: dict, tab_panels, nav_items: list)
+            build_tour({"value": "config"}, mock.Mock(), [])
+
+
+from nicegui import ui
+
 
 class TestConfigTab(unittest.TestCase):
     """Tests for webui.config_tab module."""
@@ -112,6 +123,19 @@ class TestConfigTab(unittest.TestCase):
         from webui.config_tab import build_config_tab
 
         self.assertTrue(callable(build_config_tab))
+
+    def test_build_config_tab_functional(self):
+        """Verify build_config_tab runs without crash with mock data."""
+        from webui.config_tab import build_config_tab
+
+        mock_config = {
+            "api_id": 123,
+            "api_hash": "hash",
+            "chats": [{"chat_id": "@channel", "last_read_message_id": 0}],
+        }
+        with ui.column():
+            # build_config_tab(config: dict, save_config_fn)
+            build_config_tab(mock_config, mock.Mock())
 
 
 class TestExecutionTab(unittest.TestCase):
@@ -122,6 +146,18 @@ class TestExecutionTab(unittest.TestCase):
 
         self.assertTrue(callable(build_execution_tab))
 
+    def test_build_execution_tab_functional(self):
+        """Verify build_execution_tab runs without crash with mock data."""
+        from webui.execution_tab import build_execution_tab
+
+        mock_config = {"download_directory": "downloads"}
+        chat_inputs = [{"last_read": ui.input()}]
+        with ui.column():
+            # build_execution_tab(config, load_config_fn, chat_inputs, open_media_fn, this_dir)
+            build_execution_tab(
+                mock_config, mock.Mock(), chat_inputs, mock.Mock(), "/tmp"
+            )
+
 
 class TestHistoryTab(unittest.TestCase):
     """Tests for webui.history_tab module."""
@@ -130,6 +166,15 @@ class TestHistoryTab(unittest.TestCase):
         from webui.history_tab import build_history_tab
 
         self.assertTrue(callable(build_history_tab))
+
+    def test_build_history_tab_functional(self):
+        """Verify build_history_tab runs without crash."""
+        from webui.history_tab import build_history_tab
+
+        mock_config = {}
+        with ui.column():
+            # build_history_tab(config: dict, open_media_fn, this_dir: str)
+            build_history_tab(mock_config, mock.Mock(), "/tmp")
 
 
 class TestConfigManager(unittest.TestCase):

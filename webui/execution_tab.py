@@ -66,7 +66,7 @@ def build_execution_tab(
                 ui.log(max_lines=300)
                 .classes("terminal-log")
                 .style(
-                    "width: 100%; height: 420px; padding: 16px; font-size: 13px; line-height: 1.7;"
+                    "width: 100%; height: 420px; min-height: 420px; max-height: 420px; padding: 16px; font-size: 13px; line-height: 1.7; overflow-y: auto;"
                 )
             )
 
