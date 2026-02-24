@@ -28,10 +28,12 @@ A meta of last read/downloaded message is stored in the config file so that in s
 |Language | `Python 3.8 ` and above|
 |Download media types|  audio, document, photo, video, video_note, voice|
 
-### ToDo:
-- Add GUI/Web interface.
+## 🎉 Version 3.4.0 - Interactive Web UI
 
-## 🎉 Version 3.3.0 - Anti-Ban Rate Limiting
+### What's New:
+- **Interactive Web UI**: Added a sleek web-based interface for configuration and execution monitoring.
+
+## 🎉 Version 3.3.0 - Download Pacing / Rate Limiting
 
 ### What's New:
 - **Rate Limiting**: Added `max_concurrent_downloads` to limit simultaneous downloads and prevent Telegram bans.
@@ -66,20 +68,34 @@ If you're upgrading from a previous version:
 
 ### Installation
 
-> **⚠️ Important**: For version 3.0.0, we strongly recommend using `make install` to ensure all dependencies are properly installed with correct Python version compatibility.
+> **⚠️ Important**: We strongly recommend using `make` to ensure all dependencies are properly installed with correct Python version compatibility. By default, `make install` only installs the minimal CLI dependencies.
 
-#### For *nix OS distributions with `make` availability (Recommended):
+#### CLI-Only Installation (Recommended)
+For *nix OS distributions:
 ```sh
 git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
 cd telegram_media_downloader
 make install
 ```
 
-#### For Windows or systems without `make`:
+For Windows or systems without `make`:
 ```sh
 git clone https://github.com/Dineshkarthik/telegram_media_downloader.git
 cd telegram_media_downloader
 pip3 install -r requirements.txt
+```
+
+#### Web UI Installation
+If you plan to use the graphical web interface, you must install the optional Web UI dependencies (requires Python 3.10+):
+
+For *nix OS distributions:
+```sh
+make install_webui
+```
+
+For Windows or systems without `make`:
+```sh
+pip3 install -r requirements-webui.txt
 ```
 
 > **Note**: The `make install` command automatically detects your Python version and installs the appropriate dependencies for optimal compatibility.
@@ -178,7 +194,11 @@ start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-
 end_date: null    # Filter messages before this date (ISO format)
 max_messages: null  # Limit the number of media items to download (integer)
 
-# Anti-ban / rate limiting (optional, can also be set per-chat)
+### Download Pacing / Rate Limiting
+To avoid being flagged as a bot or hitting Telegram rate limits, you can configure pacing settings:
+
+```yaml
+# Download Pacing / Rate Limiting (optional, can also be set per-chat)
 max_concurrent_downloads: 4   # Max files downloading at once per batch (1 = fully sequential)
 download_delay: null          # Delay between files: fixed (2) or random range ([1, 5])
 ```
@@ -225,9 +245,25 @@ chats:
 ```
 
 ## Execution
+
+### CLI Execution
 ```sh
 python3 media_downloader.py
 ```
+
+### Web UI Execution
+> **Note**: The Web UI relies on NiceGUI and requires **Python 3.10** or higher. It is an optional installation (see [Web UI Installation](#web-ui-installation)).
+
+For an interactive experience that lets you configure downloads, track progress visually, and view historical downloads within a built-in media player, you can start the built-in Web UI.
+
+```sh
+python3 webui.py
+```
+
+This will start a local web server (usually at `http://127.0.0.1:8080`).
+
+📚 **[Click here to read the full Web UI Getting Started Guide](docs/GETTING_STARTED_WEBUI.md)** to see screenshots of the Configuration, Execution, and History tabs.
+
 
 ### Download Directories
 

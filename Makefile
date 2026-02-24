@@ -2,8 +2,9 @@ TEST_ARTIFACTS ?= /tmp/coverage
 
 # Detect Python version and set appropriate requirements file
 PYTHON_VERSION := $(shell python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-REQUIREMENTS_FILE := requirements-$(PYTHON_VERSION).txt
-DEV_REQUIREMENTS_FILE := dev-requirements-$(PYTHON_VERSION).txt
+REQUIREMENTS_FILE := requirements/requirements-$(PYTHON_VERSION).txt
+DEV_REQUIREMENTS_FILE := requirements/dev-requirements-$(PYTHON_VERSION).txt
+WEBUI_REQUIREMENTS_FILE := requirements/requirements-webui-$(PYTHON_VERSION).txt
 
 # Fallback to generic requirements.txt if version-specific file doesn't exist
 ifeq ($(wildcard $(REQUIREMENTS_FILE)),)
@@ -11,6 +12,9 @@ REQUIREMENTS_FILE := requirements.txt
 endif
 ifeq ($(wildcard $(DEV_REQUIREMENTS_FILE)),)
 DEV_REQUIREMENTS_FILE := dev-requirements.txt
+endif
+ifeq ($(wildcard $(WEBUI_REQUIREMENTS_FILE)),)
+WEBUI_REQUIREMENTS_FILE := requirements-webui.txt
 endif
 
 .PHONY: install dev_install static_type_check pylint style_check test show_version
@@ -23,6 +27,9 @@ show_version:
 install:
 	python3 -m pip install --upgrade pip setuptools
 	python3 -m pip install -r $(REQUIREMENTS_FILE)
+
+install_webui: install
+	python3 -m pip install -r $(WEBUI_REQUIREMENTS_FILE)
 
 dev_install: install
 	python3 -m pip install -r $(DEV_REQUIREMENTS_FILE)
@@ -38,6 +45,8 @@ style_check: static_type_check pylint
 test:
 	python3 -m pytest --cov media_downloader --doctest-modules \
 		--cov utils \
+		--cov config_manager \
+		--cov db \
 		--cov-report term-missing \
 		--cov-report html:${TEST_ARTIFACTS} \
 		--cov-report xml \

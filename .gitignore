@@ -9,6 +9,7 @@
 .mypy_cache/
 .coverage
 settings.json
+coverage.xml
 
 # Distribution / packaging
 .Python
@@ -62,3 +63,6 @@ video_note/
 
 # Config file
 config.yaml
+
+# Database
+downloads.sqlite3

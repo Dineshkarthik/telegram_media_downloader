@@ -1,0 +1,1 @@
+nicegui>=1.4.0; python_version >= "3.10"
