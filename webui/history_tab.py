@@ -142,7 +142,7 @@ def build_history_tab(config: dict, open_media_fn, this_dir: str):
             "page": 1,
             "limit": 20,
             "total": 0,
-            "sortBy": "download_timestamp",
+            "sortBy": "timestamp",
             "descending": True,
         }
         global_download_dir = config.get("download_directory", "")
@@ -192,6 +192,7 @@ def build_history_tab(config: dict, open_media_fn, this_dir: str):
                         pass
                 rows.append(
                     {
+                        "id": r["id"],
                         "download_timestamp": r["download_timestamp"],
                         "chat_id": r["chat_id"],
                         "file_name": r["file_name"],

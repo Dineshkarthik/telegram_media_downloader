@@ -117,17 +117,22 @@ def get_recent_downloads(
 
             # Map valid sort columns to prevent SQL injection
             valid_sort_cols = {
+                "timestamp": "download_timestamp",
+                "chat": "chat_id",
+                "filename": "file_name",
+                "size": "file_size",
+                "media_type": "media_type",
+                # Also fallbacks for safety:
                 "download_timestamp": "download_timestamp",
                 "chat_id": "chat_id",
                 "file_name": "file_name",
                 "size_mb": "file_size",
-                "media_type": "media_type",
             }
             order_col = valid_sort_cols.get(sort_by, "download_timestamp")
             order_dir = "DESC" if sort_desc else "ASC"
 
             query = f"""
-                SELECT chat_id, message_id, file_name, file_size, download_timestamp, file_path, media_type
+                SELECT id, chat_id, message_id, file_name, file_size, download_timestamp, file_path, media_type
                 FROM download_history
                 WHERE 1=1
             """
