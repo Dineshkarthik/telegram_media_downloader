@@ -580,9 +580,45 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
 
-    messages_iter = client.iter_messages(
-        chat_id, min_id=last_read_message_id, reverse=True
-    )
+    thread_ids_raw = chat_conf.get("threads", global_config.get("threads", []))
+    thread_ids = []
+
+    if isinstance(thread_ids_raw, list):
+        for t in thread_ids_raw:
+            try:
+                thread_ids.append(int(str(t).strip()))
+            except ValueError:
+                logger.warning("Invalid thread ID '%s' ignored.", t)
+    else:
+        try:
+            thread_ids.append(int(str(thread_ids_raw).strip()))
+        except ValueError:
+            logger.warning(
+                "Invalid threads value in config: %r; defaulting to none.",
+                thread_ids_raw,
+            )
+
+    # If threads is specified, create a combined generator of messages
+    # across all threads. Otherwise, just fetch the whole chat.
+    async def get_messages_iter():
+        if thread_ids:
+            for thread_id in thread_ids:
+                logger.info(
+                    "Fetching messages for thread %s in chat %s...", thread_id, chat_id
+                )
+                async for msg in client.iter_messages(
+                    chat_id,
+                    min_id=last_read_message_id,
+                    reverse=True,
+                    reply_to=thread_id,
+                ):
+                    yield msg
+        else:
+            async for msg in client.iter_messages(
+                chat_id, min_id=last_read_message_id, reverse=True
+            ):
+                yield msg
+
     messages_list: list = []
     pagination_count: int = 0
     ids_to_retry = chat_conf.get("ids_to_retry", global_config.get("ids_to_retry", []))
@@ -596,7 +632,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             pagination_count += 1
             messages_list.append(message)
 
-    async for message in messages_iter:  # type: ignore
+    async for message in get_messages_iter():  # type: ignore
         if end_date and message.date > end_date:
             continue
         if start_date and message.date < start_date:
