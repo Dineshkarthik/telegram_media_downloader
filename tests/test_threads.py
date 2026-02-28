@@ -62,6 +62,8 @@ class TestThreadsDownloading(unittest.TestCase):
                 "media_downloader.FAILED_IDS", {}
             ), patch(
                 "media_downloader.db.record_download"
+            ), patch(
+                "media_downloader.update_config"
             ):
 
                 # The test will hang if we don't return 0 here at some point
@@ -104,6 +106,8 @@ class TestThreadsDownloading(unittest.TestCase):
                 "media_downloader.FAILED_IDS", {}
             ), patch(
                 "media_downloader.db.record_download"
+            ), patch(
+                "media_downloader.update_config"
             ):
 
                 process_messages_mock.return_value = 0  # Break loop immediately
@@ -136,6 +140,8 @@ class TestThreadsDownloading(unittest.TestCase):
                 "media_downloader.FAILED_IDS", {}
             ), patch(
                 "media_downloader.db.record_download"
+            ), patch(
+                "media_downloader.update_config"
             ):
 
                 process_messages_mock.return_value = 0  # Break loop immediately
