@@ -26,7 +26,7 @@ A meta of last read/downloaded message is stored in the config file so that in s
 | Category | Support |
 |--|--|
 |Language | `Python 3.8 ` and above|
-|Download media types|  audio, document, photo, video, video_note, voice|
+|Download media types|  audio, document, photo, video, video_note, voice, text|
 
 ## 🎉 Version 3.5.0 - Specific Thread Downloading
 
@@ -186,12 +186,15 @@ media_types:
 - video
 - voice
 - video_note
+- text
 file_formats:
   audio:
   - all
   document:
   - all
   video:
+  - all
+  text:
   - all
 
 # Optional filters (Can also be set in individual chats)
@@ -283,6 +286,7 @@ By default, all downloaded media will be stored in respective directories named 
 | video | path/to/project/<chat_id>/video |
 | voice | path/to/project/<chat_id>/voice |
 | voice_note | path/to/project/<chat_id>/voice_note |
+| text | path/to/project/<chat_id>/text |
 
 #### Custom Download Directory
 

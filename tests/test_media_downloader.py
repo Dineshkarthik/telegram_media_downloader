@@ -76,6 +76,7 @@ class MockMessage:
         self.video = kwargs.get("video", None)
         self.voice = kwargs.get("voice", None)
         self.video_note = kwargs.get("video_note", None)
+        self.message = kwargs.get("message", None)
         self.chat = Chat(kwargs.get("chat_id", None))
         self.date = kwargs.get("date", datetime.now(timezone.utc))
         # Set media based on type
@@ -187,14 +188,14 @@ class MockAsync:
         return MockEventLoop()
 
 
-async def async_get_media_meta(message_media, _type):
-    result = await _get_media_meta(message_media, _type, chat_id="123")
+async def async_get_media_meta(message_media, _type, message_id=1):
+    result = await _get_media_meta(message_media, _type, chat_id="123", message_id=message_id)
     return result
 
 
-async def async_get_media_meta_custom_dir(message_media, _type, download_directory):
+async def async_get_media_meta_custom_dir(message_media, _type, download_directory, message_id=1):
     result = await _get_media_meta(
-        message_media, _type, chat_id="123", download_directory=download_directory
+        message_media, _type, chat_id="123", message_id=message_id, download_directory=download_directory
     )
     return result
 
@@ -361,11 +362,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
             photo=MockPhoto(date=datetime(2019, 8, 5, 14, 35, 12)),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.photo, "photo")
+            async_get_media_meta(message.photo, "photo", message_id=2)
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/123/photo/photo_123"),
+                platform_generic_path("/root/project/123/photo/000000002.jpg"),
                 "jpg",
             ),
             result,
@@ -442,11 +443,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
             ),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta(message.video, "video")
+            async_get_media_meta(message.video, "video", message_id=5)
         )
         self.assertEqual(
             (
-                platform_generic_path("/root/project/123/video/video_123"),
+                platform_generic_path("/root/project/123/video/000000005.mp4"),
                 "mp4",
             ),
             result,
@@ -507,11 +508,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
             photo=MockPhoto(date=datetime(2019, 8, 5, 14, 35, 12)),
         )
         result = self.loop.run_until_complete(
-            async_get_media_meta_custom_dir(message.photo, "photo", custom_dir)
+            async_get_media_meta_custom_dir(message.photo, "photo", custom_dir, message_id=2)
         )
         self.assertEqual(
             (
-                platform_generic_path("/custom/downloads/photo/photo_123"),
+                platform_generic_path("/custom/downloads/photo/000000002.jpg"),
                 "jpg",
             ),
             result,
@@ -764,6 +765,11 @@ class MediaDownloaderTestCase(unittest.TestCase):
         mock_save.assert_called_once_with(conf)
 
     def test_get_media_type(self):
+        # Test text
+        message_text = MockMessage(id=0, media=False, message="Hello World")
+        result_text = get_media_type(message_text)
+        self.assertEqual("text", result_text)
+
         # Test photo
         message = MockMessage(
             id=1,
@@ -1604,6 +1610,40 @@ class MediaDownloaderTestCase(unittest.TestCase):
         # Test the captured callback
         captured_callback(50, 100)
         mock_pbar.update.assert_called_with(50)
+
+    @mock.patch("media_downloader.THIS_DIR", new="/tmp/project")
+    @mock.patch("media_downloader.db.record_download")
+    def test_download_media_text(self, mock_record_download):
+        message = MockMessage(
+            id=42,
+            media=False,
+            message="Hello Text Scraping World",
+            date=datetime(2025, 1, 1, 12, 0, 0),
+        )
+
+        mock_client = mock.Mock()
+        mock_client.download_media = mock.AsyncMock()
+
+        # Ensure we don't have lingering file
+        text_path = platform_generic_path("/tmp/project/123/text/000000042.txt")
+        if os.path.exists(text_path):
+            os.remove(text_path)
+
+        result = self.loop.run_until_complete(
+            async_download_media(mock_client, message, ["text"], {"text": ["all"]})
+        )
+
+        self.assertEqual(42, result)
+        self.assertTrue(os.path.exists(text_path))
+        with open(text_path, "r", encoding="utf-8") as f:
+            self.assertEqual("Hello Text Scraping World", f.read())
+
+        mock_record_download.assert_called_once()
+        mock_client.download_media.assert_not_called()
+
+        # Cleanup
+        if os.path.exists(text_path):
+            os.remove(text_path)
 
     @classmethod
     def tearDownClass(cls):

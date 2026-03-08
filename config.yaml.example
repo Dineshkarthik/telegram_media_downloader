@@ -39,12 +39,15 @@ media_types:
 - document
 - voice
 - video_note
+- text
 file_formats:
   audio:
   - all
   document:
   - all
   video:
+  - all
+  text:
   - all
 
 #optional

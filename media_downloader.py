@@ -147,21 +147,24 @@ def _progress_callback(current: int, total: int, pbar: tqdm) -> None:
 
 
 async def _get_media_meta(
-    media_obj: Union[Document, Photo],
+    media_obj: Union[Document, Photo, None],
     _type: str,
     chat_id: Union[int, str],
+    message_id: int,
     download_directory: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
     """Extract file name and file id from media object.
 
     Parameters
     ----------
-    media_obj: Union[Document, Photo]
+    media_obj: Union[Document, Photo, None]
         Media object to be extracted.
     _type: str
         Type of media object.
     chat_id: Union[int, str]
         ID of the chat, used for folder structuring.
+    message_id: int
+        ID of the message, used as fallback for file name.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
 
@@ -175,6 +178,8 @@ async def _get_media_meta(
         file_format = media_obj.mime_type.split("/")[-1]
     elif _type == "photo":
         file_format = "jpg"
+    elif _type == "text":
+        file_format = "txt"
 
     # Determine base directory for downloads
     if download_directory:
@@ -182,7 +187,7 @@ async def _get_media_meta(
     else:
         base_dir = os.path.join(THIS_DIR, str(chat_id))
 
-    if _type in ["voice", "video_note"]:
+    if _type in ["voice", "video_note"] and hasattr(media_obj, "date"):
         file_name_base = f"{_type}_{media_obj.date.isoformat()}.{file_format}"
     else:
         file_name_base = ""
@@ -192,8 +197,9 @@ async def _get_media_meta(
                     file_name_base = attr.file_name
                     break
         if file_name_base == "":
-            if hasattr(media_obj, "id"):
-                file_name_base = f"{_type}_{media_obj.id}"
+            file_name_base = f"{message_id:09d}"
+            if file_format:
+                file_name_base += f".{file_format}"
 
     # Sanitize the file name to remove invalid Windows characters
     file_name_base = re.sub(r'[<>:"/\\|?*]', "_", file_name_base)
@@ -213,10 +219,12 @@ def get_media_type(message: Message) -> Optional[str]:
     Returns
     -------
     Optional[str]
-        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document')
+        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document', 'text')
         or None.
     """
     if not message.media:
+        if getattr(message, "message", None):
+            return "text"
         return None
     if isinstance(message.media, MessageMediaPhoto):
         return "photo"
@@ -281,47 +289,68 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
             if not _type or _type not in media_types:
                 PROCESSED_IDS[chat_id].append(message.id)
                 return message.id
-            media_obj = message.photo if _type == "photo" else message.document
-            if not media_obj:
-                PROCESSED_IDS[chat_id].append(message.id)
-                return message.id
+
+            if _type == "text":
+                media_obj = None
+            else:
+                media_obj = message.photo if _type == "photo" else message.document
+                if not media_obj:
+                    PROCESSED_IDS[chat_id].append(message.id)
+                    return message.id
+
             file_name, file_format = await _get_media_meta(
-                media_obj, _type, chat_id, download_directory
+                media_obj, _type, chat_id, message.id, download_directory
             )
+
             if _can_download(_type, file_formats, file_format):
-                file_size = getattr(media_obj, "size", 0)
+                file_size = getattr(media_obj, "size", 0) if media_obj else 0
                 display_name = getattr(
                     media_obj, "file_name", os.path.basename(file_name)
-                )
+                ) if media_obj else os.path.basename(file_name)
+
                 desc = f"Downloading {display_name}"
                 logger.info(desc)
 
-                if _is_exist(file_name):
-                    file_name = get_next_name(file_name)
-                    with tqdm(
-                        total=file_size, unit="B", unit_scale=True, desc=desc
-                    ) as pbar:
-                        download_path = await client.download_media(
-                            message,
-                            file=file_name,
-                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
-                                c, t, pbar
-                            ),
-                        )
-                        download_path = manage_duplicate_file(
-                            download_path
-                        )  # type: ignore
+                download_path = None
+                if _type == "text":
+                    if _is_exist(file_name):
+                        file_name = get_next_name(file_name)
+
+                    os.makedirs(os.path.dirname(file_name), exist_ok=True)
+                    text_content = getattr(message, "message", "")
+                    with open(file_name, "w", encoding="utf-8") as f:
+                        f.write(text_content)
+
+                    if _is_exist(file_name):
+                        download_path = file_name
+                        download_path = manage_duplicate_file(download_path) # type: ignore
                 else:
-                    with tqdm(
-                        total=file_size, unit="B", unit_scale=True, desc=desc
-                    ) as pbar:
-                        download_path = await client.download_media(
-                            message,
-                            file=file_name,
-                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
-                                c, t, pbar
-                            ),
-                        )
+                    if _is_exist(file_name):
+                        file_name = get_next_name(file_name)
+                        with tqdm(
+                            total=file_size, unit="B", unit_scale=True, desc=desc
+                        ) as pbar:
+                            download_path = await client.download_media(
+                                message,
+                                file=file_name,
+                                progress_callback=lambda c, t, pbar=pbar: _progress_callback(
+                                    c, t, pbar
+                                ),
+                            )
+                            download_path = manage_duplicate_file(
+                                download_path
+                            )  # type: ignore
+                    else:
+                        with tqdm(
+                            total=file_size, unit="B", unit_scale=True, desc=desc
+                        ) as pbar:
+                            download_path = await client.download_media(
+                                message,
+                                file=file_name,
+                                progress_callback=lambda c, t, pbar=pbar: _progress_callback(
+                                    c, t, pbar
+                                ),
+                            )
                 if download_path:
                     logger.info("Media downloaded - %s", download_path)
                     logger.debug("Successfully downloaded message %s", message.id)
