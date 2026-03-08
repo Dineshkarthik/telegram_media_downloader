@@ -213,13 +213,15 @@ def get_media_type(message: Message) -> Optional[str]:
     Returns
     -------
     Optional[str]
-        The media type ('photo', 'video', 'audio', 'voice', 'video_note', 'document')
-        or None.
+        The media type ('photo', 'video', 'audio', 'voice', 'video_note',
+        'document', 'text') or None.
     """
     if not message.media:
-        return None
+        return "text" if hasattr(message, "message") and message.message else None
+
     if isinstance(message.media, MessageMediaPhoto):
         return "photo"
+
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
         for attr in doc.attributes:
@@ -228,6 +230,7 @@ def get_media_type(message: Message) -> Optional[str]:
             if hasattr(attr, "round_message") and isinstance(attr.round_message, bool):
                 return "video_note" if attr.round_message else "video"
         return "document"
+
     return None
 
 
@@ -281,78 +284,128 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
             if not _type or _type not in media_types:
                 PROCESSED_IDS[chat_id].append(message.id)
                 return message.id
-            media_obj = message.photo if _type == "photo" else message.document
-            if not media_obj:
-                PROCESSED_IDS[chat_id].append(message.id)
-                return message.id
-            file_name, file_format = await _get_media_meta(
-                media_obj, _type, chat_id, download_directory
-            )
-            if _can_download(_type, file_formats, file_format):
-                file_size = getattr(media_obj, "size", 0)
-                display_name = getattr(
-                    media_obj, "file_name", os.path.basename(file_name)
-                )
-                desc = f"Downloading {display_name}"
-                logger.info(desc)
+
+            if _type == "text":
+                text_content = message.message
+                if download_directory:
+                    base_dir = download_directory
+                else:
+                    base_dir = os.path.join(THIS_DIR, str(chat_id))
+
+                text_dir = os.path.join(base_dir, "text")
+                os.makedirs(text_dir, exist_ok=True)
+
+                file_name_base = f"{message.id:09d}.txt"
+                file_name = os.path.join(text_dir, file_name_base)
 
                 if _is_exist(file_name):
                     file_name = get_next_name(file_name)
-                    with tqdm(
-                        total=file_size, unit="B", unit_scale=True, desc=desc
-                    ) as pbar:
-                        download_path = await client.download_media(
-                            message,
-                            file=file_name,
-                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
-                                c, t, pbar
-                            ),
+
+                desc = f"Saving text {file_name_base}"
+                logger.info(desc)
+
+                with open(file_name, "w", encoding="utf-8") as f:
+                    f.write(text_content)
+
+                download_path = file_name
+                logger.info("Text saved - %s", download_path)
+                logger.debug("Successfully saved text message %s", message.id)
+                abs_path = os.path.abspath(download_path)
+                actual_size = os.path.getsize(abs_path)
+                actual_name = os.path.basename(abs_path)
+                db.record_download(
+                    str(chat_id),
+                    message.id,
+                    actual_name,
+                    actual_size,
+                    abs_path,
+                    _type,
+                )
+                if UI_PROGRESS_HOOK is not None:
+                    try:
+                        UI_PROGRESS_HOOK(
+                            desc,
+                            actual_size,
+                            actual_size,
+                            file_path=abs_path,
+                            media_type=_type,
                         )
-                        download_path = manage_duplicate_file(
-                            download_path
-                        )  # type: ignore
-                else:
-                    with tqdm(
-                        total=file_size, unit="B", unit_scale=True, desc=desc
-                    ) as pbar:
-                        download_path = await client.download_media(
-                            message,
-                            file=file_name,
-                            progress_callback=lambda c, t, pbar=pbar: _progress_callback(
-                                c, t, pbar
-                            ),
-                        )
-                if download_path:
-                    logger.info("Media downloaded - %s", download_path)
-                    logger.debug("Successfully downloaded message %s", message.id)
-                    abs_path = os.path.abspath(download_path)
-                    actual_size = (
-                        os.path.getsize(abs_path)
-                        if os.path.exists(abs_path)
-                        else file_size
-                    )
-                    actual_name = os.path.basename(abs_path)
-                    db.record_download(
-                        str(chat_id),
-                        message.id,
-                        actual_name,
-                        actual_size,
-                        abs_path,
-                        _type,
-                    )
-                    if UI_PROGRESS_HOOK is not None:
-                        # Optional signature expansion for UI logic
-                        try:
-                            UI_PROGRESS_HOOK(
-                                desc,
-                                actual_size,
-                                actual_size,
-                                file_path=abs_path,
-                                media_type=_type,
-                            )
-                        except TypeError:
-                            pass
+                    except TypeError:
+                        pass
                 DOWNLOADED_IDS[chat_id].append(message.id)
+            else:
+                media_obj = message.photo if _type == "photo" else message.document
+                if not media_obj:
+                    PROCESSED_IDS[chat_id].append(message.id)
+                    return message.id
+                file_name, file_format = await _get_media_meta(
+                    media_obj, _type, chat_id, download_directory
+                )
+                if _can_download(_type, file_formats, file_format):
+                    file_size = getattr(media_obj, "size", 0)
+                    display_name = getattr(
+                        media_obj, "file_name", os.path.basename(file_name)
+                    )
+                    desc = f"Downloading {display_name}"
+                    logger.info(desc)
+
+                    if _is_exist(file_name):
+                        file_name = get_next_name(file_name)
+                        with tqdm(
+                            total=file_size, unit="B", unit_scale=True, desc=desc
+                        ) as pbar:
+                            download_path = await client.download_media(
+                                message,
+                                file=file_name,
+                                progress_callback=lambda c, t, p=pbar: (
+                                    _progress_callback(c, t, p)
+                                ),
+                            )
+                            download_path = manage_duplicate_file(
+                                download_path
+                            )  # type: ignore
+                    else:
+                        with tqdm(
+                            total=file_size, unit="B", unit_scale=True, desc=desc
+                        ) as pbar:
+                            download_path = await client.download_media(
+                                message,
+                                file=file_name,
+                                progress_callback=lambda c, t, p=pbar: (
+                                    _progress_callback(c, t, p)
+                                ),
+                            )
+                    if download_path:
+                        logger.info("Media downloaded - %s", download_path)
+                        logger.debug("Successfully downloaded message %s", message.id)
+                        abs_path = os.path.abspath(download_path)
+                        actual_size = (
+                            os.path.getsize(abs_path)
+                            if os.path.exists(abs_path)
+                            else file_size
+                        )
+                        actual_name = os.path.basename(abs_path)
+                        db.record_download(
+                            str(chat_id),
+                            message.id,
+                            actual_name,
+                            actual_size,
+                            abs_path,
+                            _type,
+                        )
+                        if UI_PROGRESS_HOOK is not None:
+                            # Optional signature expansion for UI logic
+                            try:
+                                UI_PROGRESS_HOOK(
+                                    desc,
+                                    actual_size,
+                                    actual_size,
+                                    file_path=abs_path,
+                                    media_type=_type,
+                                )
+                            except TypeError:
+                                pass
+                    DOWNLOADED_IDS[chat_id].append(message.id)
 
             PROCESSED_IDS[chat_id].append(message.id)
             break

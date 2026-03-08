@@ -78,6 +78,8 @@ class MockMessage:
         self.video_note = kwargs.get("video_note", None)
         self.chat = Chat(kwargs.get("chat_id", None))
         self.date = kwargs.get("date", datetime.now(timezone.utc))
+        self.message = kwargs.get("message", kwargs.get("text", None))
+        self.text = self.message
         # Set media based on type
         if self.photo:
             self.media = mock.Mock(spec=MessageMediaPhoto, photo=self.photo)
@@ -856,12 +858,37 @@ class MediaDownloaderTestCase(unittest.TestCase):
         result = get_media_type(message)
         self.assertIsNone(result)
 
+        # Test text
+        message = MockMessage(id=77, media=None)
+        message.message = "Hello world!"
+        result = get_media_type(message)
+        self.assertEqual("text", result)
+
         # Test unsupported media type
         message = MockMessage(id=8, media=True)
         # Manually set media to an unsupported type (not MessageMediaPhoto or MessageMediaDocument)
         message.media = mock.Mock()
         result = get_media_type(message)
         self.assertIsNone(result)
+
+    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("os.makedirs")
+    @mock.patch("os.path.getsize", return_value=12)
+    def test_download_media_text(self, mock_getsize, mock_makedirs, mock_open_file):
+        client = MockClient()
+        message = MockMessage(
+            id=1214,
+            media=False,
+            text="test message 1",
+        )
+        # Assuming MOCK_DIR or similar, but we just use chat_id "123"
+        result = self.loop.run_until_complete(
+            async_download_media(client, message, ["text"], {})
+        )
+        self.assertEqual(result, 1214)
+        mock_makedirs.assert_called_once()
+        mock_open_file.assert_called_once()
+        mock_open_file().write.assert_called_once_with("test message 1")
 
     @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
     def test_download_media_no_media_obj(self):
