@@ -790,9 +790,7 @@ def main():
 
     updated_config = config
     try:
-        updated_config = asyncio.get_event_loop().run_until_complete(
-            begin_import(config, pagination_limit=100)
-        )
+        updated_config = asyncio.run(begin_import(config, pagination_limit=100))
     except KeyboardInterrupt:
         logger.warning(
             "KeyboardInterrupt received. Gentle exit triggered! "
