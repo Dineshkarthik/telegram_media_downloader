@@ -59,6 +59,8 @@ def update_config(config: dict):
     chats_config = config.get("chats", [])
     if chats_config:
         for chat_conf in chats_config:
+            if not isinstance(chat_conf, dict):
+                continue
             chat_id = chat_conf.get("chat_id")
             if chat_id and chat_id in DOWNLOADED_IDS and chat_id in FAILED_IDS:
                 chat_conf["ids_to_retry"] = (
@@ -744,6 +746,14 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
         chats_to_process = [config]
     else:
         chats_to_process = chats_config
+
+    valid_chats = []
+    for c in chats_to_process:
+        if isinstance(c, dict) and "chat_id" in c:
+            valid_chats.append(c)
+        else:
+            logger.warning("Skipping invalid chat configuration: %r", c)
+    chats_to_process = valid_chats
 
     parallel_chats = config.get("parallel_chats", False)
     config_write_lock = asyncio.Lock()
