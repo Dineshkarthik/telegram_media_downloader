@@ -608,13 +608,21 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 logger.info(
                     "Fetching messages for thread %s in chat %s...", thread_id, chat_id
                 )
-                async for msg in client.iter_messages(
-                    chat_id,
-                    min_id=last_read_message_id,
-                    reverse=True,
-                    reply_to=thread_id,
-                ):
-                    yield msg
+                try:
+                    async for msg in client.iter_messages(
+                        chat_id,
+                        min_id=last_read_message_id,
+                        reverse=True,
+                        reply_to=thread_id,
+                    ):
+                        yield msg
+                except Exception as e:
+                    logger.error(
+                        "Failed to fetch messages for thread %s in chat %s: %s",
+                        thread_id,
+                        chat_id,
+                        e,
+                    )
         else:
             async for msg in client.iter_messages(
                 chat_id, min_id=last_read_message_id, reverse=True
