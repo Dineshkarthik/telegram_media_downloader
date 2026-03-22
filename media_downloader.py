@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union
 from rich.logging import RichHandler
 from telethon import TelegramClient
 from telethon.errors import FileReferenceExpiredError
+from telethon.errors.rpcerrorlist import MsgIdInvalidError
 from telethon.tl.types import (
     Document,
     Message,
@@ -616,6 +617,14 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                         reply_to=thread_id,
                     ):
                         yield msg
+                except MsgIdInvalidError:
+                    # If chat_id is a broadcast channel, reply_to will fail.
+                    # Or the thread ID is completely invalid.
+                    logger.error(
+                        "Failed to fetch messages for thread %s in chat %s: Invalid Thread ID! "
+                        "(If this is a channel, you must use the linked discussion group's chat_id instead!)",
+                        thread_id, chat_id
+                    )
                 except Exception as e:
                     logger.error(
                         "Failed to fetch messages for thread %s in chat %s: %s",
