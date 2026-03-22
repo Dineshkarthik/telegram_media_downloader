@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union
 from rich.logging import RichHandler
 from telethon import TelegramClient
 from telethon.errors import FileReferenceExpiredError
+from telethon.errors.rpcerrorlist import MsgIdInvalidError
 from telethon.tl.types import (
     Document,
     Message,
@@ -59,6 +60,8 @@ def update_config(config: dict):
     chats_config = config.get("chats", [])
     if chats_config:
         for chat_conf in chats_config:
+            if not isinstance(chat_conf, dict):
+                continue
             chat_id = chat_conf.get("chat_id")
             if chat_id and chat_id in DOWNLOADED_IDS and chat_id in FAILED_IDS:
                 chat_conf["ids_to_retry"] = (
@@ -580,9 +583,61 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         download_directory = None
 
-    messages_iter = client.iter_messages(
-        chat_id, min_id=last_read_message_id, reverse=True
-    )
+    thread_ids_raw = chat_conf.get("threads", global_config.get("threads", []))
+    thread_ids = []
+
+    if isinstance(thread_ids_raw, list):
+        for t in thread_ids_raw:
+            try:
+                thread_ids.append(int(str(t).strip()))
+            except ValueError:
+                logger.warning("Invalid thread ID '%s' ignored.", t)
+    else:
+        try:
+            thread_ids.append(int(str(thread_ids_raw).strip()))
+        except ValueError:
+            logger.warning(
+                "Invalid threads value in config: %r; defaulting to none.",
+                thread_ids_raw,
+            )
+
+    # If threads is specified, create a combined generator of messages
+    # across all threads. Otherwise, just fetch the whole chat.
+    async def get_messages_iter():
+        if thread_ids:
+            for thread_id in thread_ids:
+                logger.info(
+                    "Fetching messages for thread %s in chat %s...", thread_id, chat_id
+                )
+                try:
+                    async for msg in client.iter_messages(
+                        chat_id,
+                        min_id=last_read_message_id,
+                        reverse=True,
+                        reply_to=thread_id,
+                    ):
+                        yield msg
+                except MsgIdInvalidError:
+                    # If chat_id is a broadcast channel, reply_to will fail.
+                    # Or the thread ID is completely invalid.
+                    logger.error(
+                        "Failed to fetch messages for thread %s in chat %s: Invalid Thread ID! "
+                        "(If this is a channel, you must use the linked discussion group's chat_id instead!)",
+                        thread_id, chat_id
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to fetch messages for thread %s in chat %s: %s",
+                        thread_id,
+                        chat_id,
+                        e,
+                    )
+        else:
+            async for msg in client.iter_messages(
+                chat_id, min_id=last_read_message_id, reverse=True
+            ):
+                yield msg
+
     messages_list: list = []
     pagination_count: int = 0
     ids_to_retry = chat_conf.get("ids_to_retry", global_config.get("ids_to_retry", []))
@@ -596,7 +651,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             pagination_count += 1
             messages_list.append(message)
 
-    async for message in messages_iter:  # type: ignore
+    async for message in get_messages_iter():  # type: ignore
         if end_date and message.date > end_date:
             continue
         if start_date and message.date < start_date:
@@ -709,6 +764,14 @@ async def begin_import(  # pylint: disable=too-many-locals,too-many-branches,too
     else:
         chats_to_process = chats_config
 
+    valid_chats = []
+    for c in chats_to_process:
+        if isinstance(c, dict) and "chat_id" in c:
+            valid_chats.append(c)
+        else:
+            logger.warning("Skipping invalid chat configuration: %r", c)
+    chats_to_process = valid_chats
+
     parallel_chats = config.get("parallel_chats", False)
     config_write_lock = asyncio.Lock()
 
@@ -736,9 +799,7 @@ def main():
 
     updated_config = config
     try:
-        updated_config = asyncio.get_event_loop().run_until_complete(
-            begin_import(config, pagination_limit=100)
-        )
+        updated_config = asyncio.run(begin_import(config, pagination_limit=100))
     except KeyboardInterrupt:
         logger.warning(
             "KeyboardInterrupt received. Gentle exit triggered! "

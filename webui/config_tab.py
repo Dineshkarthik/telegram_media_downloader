@@ -300,6 +300,22 @@ def build_config_tab(config: dict, save_config_fn):
                                         .classes("col")
                                         .props('outlined dense hint="e.g. 2 or 1,5"')
                                     )
+                                with ui.row().style(
+                                    "gap: 12px; width: 100%; margin-top: 4px;"
+                                ):
+                                    c_threads_val = chat_data.get("threads", [])
+                                    c_threads_str = (
+                                        ",".join(map(str, c_threads_val))
+                                        if isinstance(c_threads_val, list)
+                                        else str(c_threads_val)
+                                    )
+                                    c_inputs["threads"] = (
+                                        ui.input("Threads", value=c_threads_str)
+                                        .classes("col")
+                                        .props(
+                                            'outlined dense hint="Comma-separated thread IDs e.g. 1234, 5678"'
+                                        )
+                                    )
 
                             ui.separator().style("opacity: 0.5")
 
@@ -563,6 +579,16 @@ def build_config_tab(config: dict, save_config_fn):
                 chat_obj["end_date"] = c_in["end_date"].value.strip()
             if c_in["max_messages"].value is not None:
                 chat_obj["max_messages"] = int(c_in["max_messages"].value)
+
+            c_threads_str = (
+                c_in.get("threads").value.strip() if c_in.get("threads") else ""
+            )
+            if c_threads_str:
+                chat_obj["threads"] = [
+                    int(x.strip())
+                    for x in c_threads_str.split(",")
+                    if x.strip().isdigit()
+                ]
 
             # Chat-specific file_formats
             chat_formats = {}
