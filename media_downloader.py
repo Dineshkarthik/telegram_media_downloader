@@ -605,6 +605,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     # across all threads. Otherwise, just fetch the whole chat.
     async def get_messages_iter():
         if thread_ids:
+            all_thread_messages = []
             for thread_id in thread_ids:
                 logger.info(
                     "Fetching messages for thread %s in chat %s...", thread_id, chat_id
@@ -616,14 +617,15 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                         reverse=True,
                         reply_to=thread_id,
                     ):
-                        yield msg
+                        all_thread_messages.append(msg)
                 except MsgIdInvalidError:
                     # If chat_id is a broadcast channel, reply_to will fail.
                     # Or the thread ID is completely invalid.
                     logger.error(
                         "Failed to fetch messages for thread %s in chat %s: Invalid Thread ID! "
                         "(If this is a channel, you must use the linked discussion group's chat_id instead!)",
-                        thread_id, chat_id
+                        thread_id,
+                        chat_id,
                     )
                 except Exception as e:
                     logger.error(
@@ -632,6 +634,11 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                         chat_id,
                         e,
                     )
+
+            # Yield strictly chronologically
+            all_thread_messages.sort(key=lambda m: m.id)
+            for msg in all_thread_messages:
+                yield msg
         else:
             async for msg in client.iter_messages(
                 chat_id, min_id=last_read_message_id, reverse=True
@@ -799,7 +806,9 @@ def main():
 
     updated_config = config
     try:
-        updated_config = asyncio.run(begin_import(config, pagination_limit=100))
+        updated_config = asyncio.get_event_loop().run_until_complete(
+            begin_import(config, pagination_limit=100)
+        )
     except KeyboardInterrupt:
         logger.warning(
             "KeyboardInterrupt received. Gentle exit triggered! "
