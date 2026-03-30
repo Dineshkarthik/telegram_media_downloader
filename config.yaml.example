@@ -11,6 +11,7 @@ chats:
     last_read_message_id: 0
     ids_to_retry: []
     # (Optional) You can override global settings per-chat:
+    # threads: [] # List of thread IDs to download (e.g. [1234, 5678])
     # download_directory: /custom/path/for/this/chat
     # media_types:
     # - photo
