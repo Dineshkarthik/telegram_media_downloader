@@ -23,6 +23,7 @@ from media_downloader import (
     _can_download,
     _get_media_meta,
     _is_exist,
+    _matches_keywords,
     _progress_callback,
     begin_import,
     download_media,
@@ -1082,6 +1083,29 @@ class MediaDownloaderTestCase(unittest.TestCase):
 
         result3 = _can_download("document", file_formats, "epub")
         self.assertEqual(result3, True)
+
+    def test_matches_keywords(self):
+        # No filter configured - everything matches.
+        self.assertTrue(_matches_keywords("report.pdf", None))
+        self.assertTrue(_matches_keywords("report.pdf", []))
+
+        # Single-word pattern - plain substring match, case-insensitive.
+        self.assertTrue(_matches_keywords("Invoice_2026.pdf", ["invoice"]))
+        self.assertFalse(_matches_keywords("Report_2026.pdf", ["invoice"]))
+
+        # '*' joins words that must ALL appear, in any order.
+        keywords = ["invoice*2026", "report*draft"]
+        self.assertTrue(_matches_keywords("invoice_2026_final.pdf", keywords))
+        self.assertTrue(_matches_keywords("2026_invoice_copy.pdf", keywords))
+        self.assertTrue(_matches_keywords("report_draft_v2.pdf", keywords))
+        self.assertFalse(_matches_keywords("invoice_2025.pdf", keywords))
+        self.assertFalse(_matches_keywords("report_final.pdf", keywords))
+        self.assertFalse(_matches_keywords("random_notes.pdf", keywords))
+
+        # Only the base name is checked, not the full path.
+        self.assertTrue(
+            _matches_keywords("/downloads/document/invoice_2026.pdf", keywords)
+        )
 
     def test_is_exist(self):
         this_dir = os.path.dirname(os.path.abspath(__file__))

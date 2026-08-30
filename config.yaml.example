@@ -51,6 +51,15 @@ download_directory: null  # Custom directory path for downloads (absolute or rel
 start_date: null
 end_date: null
 max_messages: null
+# Only download files whose name matches at least one of these keyword
+# patterns (case-insensitive). Join multiple words with '*' to require ALL
+# of them (in any order) - e.g. "invoice*2026" matches a file name that
+# contains both "invoice" and "2026". A file downloads if ANY pattern in
+# the list matches. Leave null/empty to disable (download all matching files).
+file_name_keywords: null
+# file_name_keywords:
+# - invoice*2026
+# - report*draft
 
 # Download Pacing / Rate Limiting (optional, can also be set per-chat)
 # Max number of files downloading simultaneously within each batch.

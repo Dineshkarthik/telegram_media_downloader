@@ -193,6 +193,7 @@ download_directory: null  # Custom directory path for downloads (absolute or rel
 start_date: null  # Filter messages after this date (ISO format, e.g., '2023-01-01' or '2023-01-01T00:00:00')
 end_date: null    # Filter messages before this date (ISO format)
 max_messages: null  # Limit the number of media items to download (integer)
+file_name_keywords: null  # Only download files matching one of these keyword patterns, e.g. [invoice*2026, report*draft]
 
 # Download Pacing / Rate Limiting (optional, can also be set per-chat)
 max_concurrent_downloads: 4   # Max files downloading at once per batch (1 = fully sequential)
@@ -214,6 +215,7 @@ download_delay: null          # Delay between files: fixed (2) or random range (
 | `start_date` | Optional: Filter messages to download only those sent after this date (ISO format). Leave `null` to disable. |
 | `end_date` | Optional: Filter messages to download only those sent before this date (ISO format). Leave `null` to disable. |
 | `max_messages` | Optional: Limit the number of media items to download (integer). Leave `null` for unlimited. |
+| `file_name_keywords` | Optional: List of keyword patterns (case-insensitive) to match against the file name. Join multiple words with `*` to require ALL of them in any order (e.g. `invoice*2026` needs both "invoice" and "2026" present). A file downloads if it matches ANY pattern in the list. Leave `null`/empty to download all files regardless of name. Can be set globally or per-chat. |
 | `max_concurrent_downloads` | Optional: Maximum number of files downloading simultaneously per batch. Lower values reduce ban risk. `1` = fully sequential. Default: `4`. |
 | `download_delay` | Optional: Pause between starting each file download (seconds). Use a number for a fixed delay (`2`) or a list for a random range (`[1, 5]`). Leave `null` for no delay. |
 
