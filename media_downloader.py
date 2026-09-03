@@ -107,6 +107,42 @@ def _can_download(_type: str, file_formats: dict, file_format: Optional[str]) ->
     return True
 
 
+def _matches_keywords(file_name: str, file_name_keywords: Optional[List[str]]) -> bool:
+    """
+    Check whether a file name matches at least one keyword pattern.
+
+    Each pattern in `file_name_keywords` is a case-insensitive substring, or
+    several substrings joined by `*` that must ALL appear (in any order) for
+    that pattern to match, e.g. "invoice*2026" matches any file name
+    containing both "invoice" and "2026". A file matches overall if ANY
+    pattern in the list matches (OR across patterns, AND within a pattern).
+
+    Parameters
+    ----------
+    file_name: str
+        Full path or base name of the file to check.
+    file_name_keywords: Optional[List[str]]
+        List of keyword patterns to match against the file name.
+        If empty or None, every file name matches (no filtering applied).
+
+    Returns
+    -------
+    bool
+        True if `file_name_keywords` is empty/None, or the file's base name
+        satisfies at least one pattern. False otherwise.
+    """
+    if not file_name_keywords:
+        return True
+    base_name = os.path.basename(file_name).lower()
+    for pattern in file_name_keywords:
+        if not pattern:
+            continue
+        parts = [part.strip().lower() for part in pattern.split("*") if part.strip()]
+        if parts and all(part in base_name for part in parts):
+            return True
+    return False
+
+
 def _is_exist(file_path: str) -> bool:
     """
     Check if a file exists and it is not a directory.
@@ -239,6 +275,7 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
     file_formats: dict,
     chat_id: Union[int, str],
     download_directory: Optional[str] = None,
+    file_name_keywords: Optional[List[str]] = None,
 ):
     """
     Download media from Telegram.
@@ -262,6 +299,10 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
         ID of the chat being processed.
     download_directory: Optional[str]
         Custom directory path for downloads. If None, uses default structure.
+    file_name_keywords: Optional[List[str]]
+        If provided, only files whose name contains at least one of these
+        substrings (case-insensitive) are downloaded. None/empty disables
+        this filter.
 
     Returns
     -------
@@ -288,7 +329,9 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
             file_name, file_format = await _get_media_meta(
                 media_obj, _type, chat_id, download_directory
             )
-            if _can_download(_type, file_formats, file_format):
+            if _can_download(_type, file_formats, file_format) and _matches_keywords(
+                file_name, file_name_keywords
+            ):
                 file_size = getattr(media_obj, "size", 0)
                 display_name = getattr(
                     media_obj, "file_name", os.path.basename(file_name)
@@ -403,6 +446,7 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
     download_directory: Optional[str] = None,
     max_concurrent_downloads: int = 4,
     download_delay: Optional[Union[float, List[float]]] = None,
+    file_name_keywords: Optional[List[str]] = None,
 ) -> int:
     """
     Download media from Telegram.
@@ -429,6 +473,9 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
         Delay between starting each file download (seconds).
         Pass a float for a fixed delay, or [min, max] for a random range.
         None means no delay.
+    file_name_keywords: Optional[List[str]]
+        If provided, only files whose name contains at least one of these
+        substrings (case-insensitive) are downloaded.
 
     Returns
     -------
@@ -476,6 +523,7 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
                     file_formats,
                     chat_id,
                     download_directory,
+                    file_name_keywords,
                 )
             )
 
@@ -516,6 +564,9 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
     )
     file_formats: dict = chat_conf.get(
         "file_formats", global_config.get("file_formats", {})
+    )
+    file_name_keywords: Optional[List[str]] = chat_conf.get(
+        "file_name_keywords", global_config.get("file_name_keywords")
     )
     last_read_message_id = chat_conf.get(
         "last_read_message_id", global_config.get("last_read_message_id", 0)
@@ -593,6 +644,11 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             chat_id, ids=ids_to_retry
         )
         for message in skipped_messages:
+            # Telethon returns None for any id that no longer resolves to a
+            # message (e.g. it was deleted since the last run) - skip those
+            # rather than letting a None reach the batch processing below.
+            if message is None:
+                continue
             pagination_count += 1
             messages_list.append(message)
 
@@ -615,6 +671,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 download_directory,
                 max_concurrent_downloads,
                 download_delay,
+                file_name_keywords,
             )
             # Memory cleanup for next batch
             CURRENT_BATCH_IDS[chat_id] = []
@@ -643,6 +700,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             download_directory,
             max_concurrent_downloads,
             download_delay,
+            file_name_keywords,
         )
         CURRENT_BATCH_IDS[chat_id] = []
         PROCESSED_IDS[chat_id] = []
