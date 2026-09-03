@@ -1205,6 +1205,45 @@ class MediaDownloaderTestCase(unittest.TestCase):
         )
         mock_update_config.assert_called()
 
+    @mock.patch("media_downloader.update_config", return_value=None)
+    @mock.patch("media_downloader.process_messages", return_value=1234)
+    def test_process_chat_skips_none_retry_messages(
+        self, mock_process_messages, mock_update_config
+    ):
+        """A retry id that no longer resolves to a message (e.g. it was
+        deleted) makes client.get_messages() return None for that entry.
+        process_chat must skip it rather than crash on `.id` access."""
+        import asyncio
+
+        import media_downloader
+
+        class NoneRetryClient(MockClient):
+            async def get_messages(self, *args, **kwargs):
+                if kwargs.get("ids") == [42, 43]:
+                    return [
+                        None,
+                        MockMessage(id=43, media=False, text="still here"),
+                    ]
+                return await super().get_messages(*args, **kwargs)
+
+        client = NoneRetryClient()
+        conf = {"api_id": 1, "api_hash": "a"}
+        chat_conf = {"chat_id": 444, "ids_to_retry": [42, 43]}
+        media_downloader.DOWNLOADED_IDS[444] = []
+        media_downloader.FAILED_IDS[444] = []
+
+        # pagination_limit=1 so the retry batch (id 43, with None already
+        # skipped) is flushed to process_messages on its own, separate from
+        # whatever MockClient.iter_messages yields afterwards.
+        self.loop.run_until_complete(
+            media_downloader.process_chat(client, conf, chat_conf, 1, asyncio.Lock())
+        )
+        # Must not raise AttributeError: 'NoneType' object has no attribute
+        # 'id', and only the real message (id 43) should be in the first
+        # (retry) batch passed to process_messages.
+        first_batch = mock_process_messages.call_args_list[0].args[1]
+        self.assertEqual([m.id for m in first_batch], [43])
+
     def test_process_messages_max_concurrent_downloads(self):
         """Test that max_concurrent_downloads semaphore limits parallel execution."""
         import media_downloader

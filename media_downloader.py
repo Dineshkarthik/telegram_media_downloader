@@ -644,6 +644,11 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             chat_id, ids=ids_to_retry
         )
         for message in skipped_messages:
+            # Telethon returns None for any id that no longer resolves to a
+            # message (e.g. it was deleted since the last run) - skip those
+            # rather than letting a None reach the batch processing below.
+            if message is None:
+                continue
             pagination_count += 1
             messages_list.append(message)
 
