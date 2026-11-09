@@ -319,7 +319,11 @@ class MockClient:
 class MediaDownloaderTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.loop = asyncio.get_event_loop()
+        try:
+            cls.loop = asyncio.get_event_loop()
+        except RuntimeError:
+            cls.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(cls.loop)
 
     def setUp(self):
         # Prevent tests from writing to the real SQLite database
@@ -1604,6 +1608,62 @@ class MediaDownloaderTestCase(unittest.TestCase):
         # Test the captured callback
         captured_callback(50, 100)
         mock_pbar.update.assert_called_with(50)
+
+
+    @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
+    @mock.patch("media_downloader._is_exist", return_value=True)
+    def test_download_media_skip_existing_files(self, mock_is_exist):
+        client = MockClient()
+        client.download_media = mock.AsyncMock()
+        message = MockMessage(
+            id=999,
+            media=True,
+            video=MockVideo(
+                file_name="sample_video.mp4",
+                mime_type="video/mp4",
+            ),
+        )
+        result = self.loop.run_until_complete(
+            download_media(
+                client,
+                message,
+                ["video"],
+                {"video": ["all"]},
+                chat_id="123",
+                skip_existing_files=True,
+            )
+        )
+        self.assertEqual(999, result)
+        # Verify client.download_media was NOT called because file was skipped
+        client.download_media.assert_not_called()
+
+    @mock.patch("media_downloader.manage_duplicate_file", new=mock_manage_duplicate_file)
+    @mock.patch("media_downloader.THIS_DIR", new=MOCK_DIR)
+    @mock.patch("media_downloader._is_exist", return_value=True)
+    def test_download_media_not_skipped_by_default(self, mock_is_exist):
+        client = MockClient()
+        client.download_media = mock.AsyncMock(return_value="/test/sample_video.mp4")
+        message = MockMessage(
+            id=1000,
+            media=True,
+            video=MockVideo(
+                file_name="sample_video.mp4",
+                mime_type="video/mp4",
+            ),
+        )
+        result = self.loop.run_until_complete(
+            download_media(
+                client,
+                message,
+                ["video"],
+                {"video": ["all"]},
+                chat_id="123",
+                skip_existing_files=False,
+            )
+        )
+        self.assertEqual(1000, result)
+        # Verify client.download_media WAS called because skip_existing_files was False
+        client.download_media.assert_called_once()
 
     @classmethod
     def tearDownClass(cls):
