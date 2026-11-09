@@ -60,3 +60,7 @@ max_concurrent_downloads: 4
 # Fixed delay:  download_delay: 2        (always 2 seconds)
 # Random range: download_delay: [1, 5]   (random 1–5 seconds per file)
 download_delay: null
+
+# Skip downloading media if a file with the same name already exists in the download directory.
+# Default: false (will append _1, _2 to avoid overwriting).
+skip_existing_files: false

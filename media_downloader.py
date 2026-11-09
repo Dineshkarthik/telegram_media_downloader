@@ -239,6 +239,7 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
     file_formats: dict,
     chat_id: Union[int, str],
     download_directory: Optional[str] = None,
+    skip_existing_files: bool = False,
 ):
     """
     Download media from Telegram.
@@ -293,6 +294,13 @@ async def download_media(  # pylint: disable=too-many-locals,too-many-branches,t
                 display_name = getattr(
                     media_obj, "file_name", os.path.basename(file_name)
                 )
+
+                if skip_existing_files and _is_exist(file_name):
+                    logger.info("File already exists, skipping - %s", file_name)
+                    DOWNLOADED_IDS[chat_id].append(message.id)
+                    PROCESSED_IDS[chat_id].append(message.id)
+                    return message.id
+
                 desc = f"Downloading {display_name}"
                 logger.info(desc)
 
@@ -403,6 +411,7 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
     download_directory: Optional[str] = None,
     max_concurrent_downloads: int = 4,
     download_delay: Optional[Union[float, List[float]]] = None,
+    skip_existing_files: bool = False,
 ) -> int:
     """
     Download media from Telegram.
@@ -476,6 +485,7 @@ async def process_messages(  # pylint: disable=too-many-positional-arguments
                     file_formats,
                     chat_id,
                     download_directory,
+                    skip_existing_files=skip_existing_files,
                 )
             )
 
@@ -535,6 +545,11 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
         max_concurrent_downloads = 4
     download_delay = chat_conf.get(
         "download_delay", global_config.get("download_delay")
+    )
+    skip_existing_files: bool = bool(
+        chat_conf.get(
+            "skip_existing_files", global_config.get("skip_existing_files", False)
+        )
     )
 
     start_date_val = chat_conf.get("start_date", global_config.get("start_date"))
@@ -615,6 +630,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
                 download_directory,
                 max_concurrent_downloads,
                 download_delay,
+                skip_existing_files=skip_existing_files,
             )
             # Memory cleanup for next batch
             CURRENT_BATCH_IDS[chat_id] = []
@@ -643,6 +659,7 @@ async def process_chat(  # pylint: disable=too-many-locals,too-many-branches,too
             download_directory,
             max_concurrent_downloads,
             download_delay,
+            skip_existing_files=skip_existing_files,
         )
         CURRENT_BATCH_IDS[chat_id] = []
         PROCESSED_IDS[chat_id] = []
